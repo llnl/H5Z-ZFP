@@ -49,6 +49,8 @@ Compiling ZFP_
 Compiling HDF5_
 ^^^^^^^^^^^^^^^
 
+* If you want to test the plugin as a dynamically loaded plugin, the HDF5_ library must NOT be configured with ``--disable-shared``.
+
 * If you want to be able to run the fortran tests for this filter, HDF5_ must be configured with *both* the ``--enable-fortran`` and ``--enable-fortran2003`` configuration switches.
   Otherwise, any vanilla installation of HDF5_ is acceptable.
   
