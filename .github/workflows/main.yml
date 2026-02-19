@@ -50,7 +50,7 @@ jobs:
         
  # Checks-out the repository under $GITHUB_WORKSPACE so the job can access it.
     - name: Get Sources
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
 
 ##################################
 # INSTALL ZFP
@@ -115,7 +115,7 @@ jobs:
         echo "CXX=g++"  >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v3
+      uses: actions/checkout@v6
 
     - name: Build HDF5 from source
       run: |
@@ -180,7 +180,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
       - name: install prerequisites
         run: |
           choco install \

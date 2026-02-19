@@ -1,0 +1,29 @@
+# Dependabot configuration for automatic dependency updates
+# This will automatically create pull requests to update GitHub Actions to their latest versions
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # Check for updates to GitHub Actions every week
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    # Automatically merge minor and patch updates
+    open-pull-requests-limit: 10
+    # Add labels to PRs
+    labels:
+      - "dependencies"
+      - "github-actions"
+    # Group all GitHub Actions updates into a single PR when possible
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # Commit message prefix
+    commit-message:
+      prefix: "ci"
+      include: "scope"
