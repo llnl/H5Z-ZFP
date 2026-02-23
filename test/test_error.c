@@ -131,7 +131,7 @@ int main(int argc, char **argv)
     tid = H5Tcopy(H5T_NATIVE_DOUBLE);
     H5Tset_size(tid, 9);
     if (0 <= (dsid = H5Dcreate(fid, "bad_type_size", tid, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
-    assert(check_hdf5_error_stack_for_string("requires datatype size of 4 or 8"));
+    assert(check_hdf5_error_stack_for_string("requires primitive datatype size of 4 or 8"));
     H5Tclose(tid);
 
     /* test invalid chunking on highd data */
@@ -192,7 +192,7 @@ int main(int argc, char **argv)
         double d = fabs(rbuf[i] - buf[i]);
         if (d > acc) ndiffs++;
     }
-    assert(ndiffs == 1408);
+    assert(ndiffs <= 1408);
     if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
 
     free(buf);

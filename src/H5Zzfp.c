@@ -144,13 +144,16 @@ static htri_t
 H5Z_zfp_can_apply(hid_t dcpl_id, hid_t type_id, hid_t chunk_space_id)
 {   
     static char const *_funcname_ = "H5Z_zfp_can_apply";
-    int const max_ndims = (ZFP_VERSION_NO <= 0x0053) ? 3 : 4;
-    int ndims, ndims_used = 0;
-    size_t i, dsize;
+    int const max_ndims = (ZFP_VERSION_NO <= 0x0530) ? 3 : 4;
     htri_t retval = 0;
-    hsize_t dims[H5S_MAX_RANK];
+    int chunk_ndims, chunk_ndims_used = 0;
+    hsize_t chunk_dims[H5S_MAX_RANK];
+    int atype_ndims = 0;
+    hsize_t atype_dims[H5S_MAX_RANK];
+    size_t i, dsize;
     H5T_class_t dclass;
     hid_t native_type_id;
+    hid_t atype_super_id;
 
     (void)dcpl_id; /* currently not used */
 
@@ -162,13 +165,32 @@ H5Z_zfp_can_apply(hid_t dcpl_id, hid_t type_id, hid_t chunk_space_id)
 
     /* get datatype class, size and space dimensions */
     if (H5T_NO_CLASS == (dclass = H5Tget_class(type_id)))
-        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "bad datatype class");
+        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get type class");
 
     if (0 == (dsize = H5Tget_size(type_id)))
-        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "bad datatype size");
+        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get type size");
 
-    if (0 > (ndims = H5Sget_simple_extent_dims(chunk_space_id, dims, 0)))
-        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "bad chunk data space");
+    if (0 > (chunk_ndims = H5Sget_simple_extent_dims(chunk_space_id, chunk_dims, 0)))
+        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get chunk extents");
+
+    /* if we have an array data type, we need to descend into it for type
+       and dimension information */
+    if (H5T_ARRAY == dclass)
+    {
+        if (H5I_INVALID_HID == (atype_super_id = H5Tget_super(type_id)))
+            H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get array type super");
+	
+        if (0 > (atype_ndims = H5Tget_array_dims2(type_id, atype_dims)))
+            H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get array type dimensions");
+
+	/* overwrite dclass with super type */
+        if (H5T_NO_CLASS == (dclass = H5Tget_class(atype_super_id)))
+            H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get array super type class");
+
+	/* overwrite dsize with super type */
+        if (0 == (dsize = H5Tget_size(atype_super_id)))
+            H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, -1, "can't get array super type size");
+    }
 
     /* confirm ZFP library can handle this data */
 #if ZFP_VERSION_NO < 0x0510
@@ -183,21 +205,21 @@ H5Z_zfp_can_apply(hid_t dcpl_id, hid_t type_id, hid_t chunk_space_id)
 
     if (!(dsize == 4 || dsize == 8))
         H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, 0,
-            "requires datatype size of 4 or 8");
+            "requires primitive datatype size of 4 or 8");
 
     /* check for *USED* dimensions of the chunk */
-    for (i = 0; i < (size_t) ndims; i++)
+    chunk_ndims_used = atype_ndims;
+    for (i = 0; i < (size_t) chunk_ndims; i++)
     {
-        if (dims[i] <= 1) continue;
-        ndims_used++;
+        if (chunk_dims[i] <= 1) continue;
+        chunk_ndims_used++;
     }
 
-    if (ndims_used == 0 || ndims_used > max_ndims)
-#if ZFP_VERSION_NO < 0x0530
+    if (chunk_ndims_used == 0 || chunk_ndims_used > max_ndims)
         H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADVALUE, 0,
+#if ZFP_VERSION_NO < 0x0530
             "chunk must have only 1...3 non-unity dimensions");
 #else
-        H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADVALUE, 0,
             "chunk must have only 1...4 non-unity dimensions");
 #endif
 
@@ -205,7 +227,7 @@ H5Z_zfp_can_apply(hid_t dcpl_id, hid_t type_id, hid_t chunk_space_id)
     native_type_id = H5Tget_native_type(type_id, H5T_DIR_ASCEND);
     if (H5Tget_order(type_id) != H5Tget_order(native_type_id))
         H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_BADTYPE, 0,
-            "endian targeting non-sensical in conjunction with ZFP filter");
+            "endian targeting not allowed. ZFP is endian-agnostic");
 
     retval = 1;
 
