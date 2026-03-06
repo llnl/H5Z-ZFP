@@ -725,11 +725,15 @@ ifneq ($(ZFP_HAS_REVERSIBLE),)
     LIB_CHECK += test-lib-reversible
 endif
 
-PLUGIN_CHECK = test-rate test-accuracy test-precision test-h5repack
-ifneq ($(ZFP_HAS_REVERSIBLE),)
-    PLUGIN_CHECK += test-reversible
+# Only do plugin tests if HDF5 is built for shared libs
+PLUGIN_CHECK =
+ifneq ($(HDF5_IS_STATIC_ONLY),1)
+    PLUGIN_CHECK = test-rate test-accuracy test-precision test-h5repack
+    ifneq ($(ZFP_HAS_REVERSIBLE),)
+        PLUGIN_CHECK += test-reversible
+    endif
+    PLUGIN_CHECK += test-endian test-endian1
 endif
-PLUGIN_CHECK += test-endian test-endian1
 
 CHECK = $(LIB_CHECK) $(PLUGIN_CHECK)
 ifneq ($(FC),)

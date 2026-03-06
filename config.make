@@ -218,6 +218,15 @@ ifeq ($(shell grep H5Dwrite_chunk $(HDF5_INC)/*.h),)
     HDF5_HAS_WRITE_CHUNK = 0
 endif
 
+HDF5_IS_STATIC_ONLY = 1
+ifneq ($(wildcard $(HDF5_LIB)/libhdf5.so),)
+  HDF5_IS_STATIC_ONLY = 0
+else ifneq ($(wildcard $(HDF5_LIB)/libhdf5.dylib),)
+  HDF5_IS_STATIC_ONLY = 0
+else ifneq ($(wildcard $(HDF5_LIB)/libhdf5.dll),)
+  HDF5_IS_STATIC_ONLY = 0
+endif
+
 ifeq ($(PREFIX),)
     PREFIX := $(shell pwd)/install
 endif
