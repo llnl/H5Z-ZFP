@@ -165,6 +165,70 @@ jobs:
         ctest -C Release . --output-on-failure
       shell: bash
 
+  code-coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq libhdf5-dev hdf5-tools gfortran lcov
+        echo "CC=gcc" >> $GITHUB_ENV
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Get Sources
+      uses: actions/checkout@v6
+
+    - name: Install ZFP
+      run: |
+        git clone https://github.com/LLNL/zfp.git
+        cd zfp
+        git checkout 1.0.0
+        mkdir build && cd build
+        cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
+              -DBUILD_CFP=ON \
+              -DCMAKE_INSTALL_PREFIX=$HOME/zfp-install \
+              -DBUILD_TESTING=OFF \
+              -DBUILD_UTILITIES=OFF \
+              ..
+        make -j$(nproc) install
+        echo "ZFP_HOME=$HOME/zfp-install" >> $GITHUB_ENV
+        echo "ZFP_DIR=$HOME/zfp-install" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Build with coverage flags
+      run: |
+        mkdir build && cd build
+        cmake -DFORTRAN_INTERFACE=ON \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_C_FLAGS="--coverage" \
+              -DCMAKE_Fortran_FLAGS="--coverage" \
+              -DBUILD_TESTING=ON \
+              ..
+        make -j$(nproc)
+      shell: bash
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+      shell: bash
+
+    - name: Generate coverage report
+      run: |
+        lcov --capture --directory build --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' '*/zfp/*' '*/test/*' --output-file coverage.info
+        lcov --list coverage.info
+      shell: bash
+
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: coverage.info
+        fail_ci_if_error: false
+
   windows-build:
     name: 'Windows MSVC/Clang'
     defaults:
