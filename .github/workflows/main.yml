@@ -57,10 +57,8 @@ jobs:
                  
     - name: install ZFP
       run: |
-        git clone https://github.com/LLNL/zfp.git
-        export HOME_DIR=$(echo ~)
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
         cd zfp
-        git checkout 1.0.0
         mkdir build;cd build
         cmake -D ZFP_BIT_STREAM_WORD_SIZE=8 -D BUILD_CFP=ON -D CMAKE_INSTALL_PREFIX=$PWD/zfp -D BUILD_TESTING=OFF -D BUILD_UTILITIES=OFF ..
         make install
@@ -136,9 +134,8 @@ jobs:
 
     - name: Install ZFP
       run: |
-        git clone https://github.com/LLNL/zfp.git
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
         cd zfp
-        git checkout 1.0.0
         mkdir build
         cd build
         cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
@@ -183,9 +180,8 @@ jobs:
 
     - name: Install ZFP
       run: |
-        git clone https://github.com/LLNL/zfp.git
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
         cd zfp
-        git checkout 1.0.0
         mkdir build && cd build
         cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
               -DBUILD_CFP=ON \
@@ -251,9 +247,8 @@ jobs:
         shell: cmd
       - name: Download and install ZFP
         run: |
-          git clone https://github.com/LLNL/zfp.git
+          git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
           cd zfp
-          git checkout 1.0.0
           mkdir -p build
           cd build
           cmake .. \
