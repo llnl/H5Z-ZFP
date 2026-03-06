@@ -36,7 +36,8 @@ If you attempt to use this filter with a ZFP_ library compiled differently from 
 This will result in silently ignoring an HDF5_ client's request to compress data with ZFP_.
 Also, be sure to see :ref:`endian-issues`.
 
-ZFP_ can be built with either CMake or its vanilla Makefile.
+ZFP_ can be built with either CMake (preferred) or its vanilla Makefile.
+Building with CMake is preferred because it generates config files that allow proper dependency propagation (e.g. OpenMP support) and provides a standard installation layout.
 
 Example ZFP_ build using CMake (recommended)::
 
