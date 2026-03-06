@@ -3,6 +3,8 @@
 A highly flexible floating point and integer
 compression plugin for the HDF5 library using ZFP compression.
 
+[![Build Status](https://github.com/LLNL/H5Z-ZFP/actions/workflows/main.yml/badge.svg)](https://github.com/LLNL/H5Z-ZFP/actions/workflows/main.yml)
+[![Documentation Status](https://readthedocs.org/projects/h5z-zfp/badge/?version=latest)](http://h5z-zfp.readthedocs.io)
 [![codecov](https://codecov.io/gh/LLNL/H5Z-ZFP/branch/master/graph/badge.svg)](https://codecov.io/gh/LLNL/H5Z-ZFP)
 
 For information about ZFP compression and the BSD-Licensed ZFP
