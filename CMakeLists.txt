@@ -97,6 +97,24 @@ if (BUILD_TESTING)
 endif ()
 
 #------------------------------------------------------------------------------#
+# Documentation
+#------------------------------------------------------------------------------#
+find_package(Sphinx QUIET)
+if (NOT Sphinx_FOUND)
+  find_program(SPHINX_EXECUTABLE NAMES sphinx-build
+    DOC "Path to sphinx-build executable")
+endif ()
+if (SPHINX_EXECUTABLE)
+  set(SPHINX_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/docs)
+  set(SPHINX_BUILD ${CMAKE_CURRENT_BINARY_DIR}/docs)
+  add_custom_target(docs
+    COMMAND ${SPHINX_EXECUTABLE} -b html ${SPHINX_SOURCE} ${SPHINX_BUILD}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Generating HTML documentation with Sphinx"
+    VERBATIM)
+endif ()
+
+#------------------------------------------------------------------------------#
 # Packaging
 #------------------------------------------------------------------------------#
 # Install h5z_zfp-config.cmake and h5z_zfp-config-version.cmake

@@ -42,7 +42,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -qq libhdf5-dev
         sudo apt-get install -qq hdf5-tools
-        echo "HDF5_HOME=/usr/include/hdf5/serial,/usr/lib/x86_64-linux-gnu/hdf5/serial,/usr/bin" >> $GITHUB_ENV
         # Set env vars
         echo "CC=gcc" >> $GITHUB_ENV
         echo "FC=gfortran" >> $GITHUB_ENV
@@ -72,12 +71,6 @@ jobs:
 ##################################
 # BUILD AND TEST H5Z-ZFP
 ##################################
-
-    - name: build (autotools) and check
-      run: |
-        make all
-        make check
-      shell: bash
 
     - name: build (cmake) and test
       run: |

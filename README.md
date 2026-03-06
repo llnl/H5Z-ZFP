@@ -3,8 +3,6 @@
 A highly flexible floating point and integer
 compression plugin for the HDF5 library using ZFP compression.
 
-[![Build Status](https://travis-ci.com/LLNL/H5Z-ZFP.svg?branch=master)](https://travis-ci.com/LLNL/H5Z-ZFP)
-[![Documentation Status](https://readthedocs.org/projects/h5z-zfp/badge/?version=latest)](http://h5z-zfp.readthedocs.io)
 [![codecov](https://codecov.io/gh/LLNL/H5Z-ZFP/branch/master/graph/badge.svg)](https://codecov.io/gh/LLNL/H5Z-ZFP)
 
 For information about ZFP compression and the BSD-Licensed ZFP
@@ -35,4 +33,27 @@ of more than 3 dimensions (or 4 dimensions for ZFP versions 0.5.5 and newer)
 as long as no more than 3 (or 4) dimensions of the HDF5 dataset *chunking* are
 of size greater than 1.
 
-[**Full documentation**](http://h5z-zfp.readthedocs.io)
+## Building
+
+This project uses CMake. An out-of-source build is required:
+
+```bash
+mkdir build && cd build
+cmake -DHDF5_ROOT=<path> -DZFP_ROOT=<path> ..
+make
+```
+
+### CMake Options
+
+- `-DBUILD_TESTING=ON` - Enable tests
+- `-DFORTRAN_INTERFACE=ON` - Enable Fortran interface (default: ON)
+- `-DCMAKE_INSTALL_PREFIX=<path>` - Installation prefix
+
+### Running Tests
+
+```bash
+mkdir build && cd build
+cmake -DBUILD_TESTING=ON ..
+make
+ctest -C Release .
+```
