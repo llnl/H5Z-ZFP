@@ -238,16 +238,11 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v6
-      - name: install prerequisites
-        run: |
-          choco install \
-            unzip \
-            wget
       - name: setup MSVC Tools
         uses: ilammy/msvc-dev-cmd@v1
       - name: download HDF5 for Windows
         run: |
-          wget --quiet \
+          curl -sSLO \
             https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5-win-vs2022_cl.msi
       - name: Install HDF5 for Windows
         run: msiexec /i "hdf5-1.14.5-win-vs2022_cl.msi" /qn
