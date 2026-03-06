@@ -59,3 +59,14 @@ cmake -DBUILD_TESTING=ON ..
 make
 ctest -C Release .
 ```
+
+### Building Documentation
+
+To build the HTML documentation locally (requires [Sphinx](https://www.sphinx-doc.org/) and the `sphinx_rtd_theme`):
+
+```bash
+pip install -r docs/requirements.txt
+mkdir build && cd build
+cmake ..
+cmake --build . --target docs
+```
