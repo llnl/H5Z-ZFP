@@ -31,16 +31,25 @@ Prerequisites
 Compiling ZFP_
 ^^^^^^^^^^^^^^
 
-ZFP_ must be built with CMake_ and with ``BIT_STREAM_WORD_TYPE`` set to ``uint8``.
+ZFP_ must be built with ``BIT_STREAM_WORD_TYPE`` set to ``uint8``.
 If you attempt to use this filter with a ZFP_ library compiled differently from this, the filter's ``can_apply`` method will always return false.
 This will result in silently ignoring an HDF5_ client's request to compress data with ZFP_.
 Also, be sure to see :ref:`endian-issues`.
 
-Example ZFP_ build::
+ZFP_ can be built with either CMake or its vanilla Makefile.
+
+Example ZFP_ build using CMake (recommended)::
 
     mkdir build && cd build
     cmake -DZFP_BIT_STREAM_WORD_SIZE=8 -DBUILD_CFP=ON -DCMAKE_INSTALL_PREFIX=<path-to-install> ..
     make install
+
+Example ZFP_ build using Make::
+
+    make BIT_STREAM_WORD_TYPE=uint8 BUILD_SHARED_LIBS=1
+
+When ZFP_ is built with Make, there is no CMake config file generated.
+Set ``ZFP_DIR`` or ``ZFP_ROOT`` to the top-level ZFP_ source/build directory so that H5Z-ZFP_ can locate the headers and library.
 
 For more information and details, please see the `ZFP README <https://github.com/LLNL/zfp/blob/master/README.md>`_.
 
@@ -61,11 +70,10 @@ Compiling H5Z-ZFP via CMake
 
 H5Z-ZFP_ is designed to be compiled both as a standalone HDF5_ *plugin* and as a separate *library* an application can explicitly link. See :ref:`plugin-vs-library`.
 
-It is necessary to have also built ZFP_ with CMake_.
-This is necessary to get the correct dependencies from ZFP_.
-For example, it is possible to build ZFP_ with OpenMP support.
-The resulting CMake_ config files of ZFP_ build will make sure that this OpenMP dependency is correctly propagated to the build of H5Z-ZFP_ filter.
-However, for HDF5_ it is not necessary to build it with its CMake_ build system but it is strongly recommended.
+ZFP_ can be built with either CMake_ or its vanilla Makefile (see :ref:`zfp-config`).
+When ZFP_ is built with CMake_, the resulting config files ensure that dependencies (e.g. OpenMP support) are correctly propagated to the H5Z-ZFP_ build.
+When ZFP_ is built with Make, set ``ZFP_DIR`` or ``ZFP_ROOT`` to point to the ZFP_ source/build directory.
+For HDF5_, it is not necessary to build it with its CMake_ build system but it is strongly recommended.
 
 ZFP_ must have been :ref:`configured <zfp-config>` with ``BIT_STREAM_WORD_TYPE`` of ``uint8`` as described above.
 
@@ -79,7 +87,7 @@ Once both HDF5_ and ZFP_ have been installed, H5Z-ZFP_ can be compiled using a c
     export ZFP_DIR=<path-to-zfp-config>
     CC=<C-compiler> FC=<Fortran-compiler> cmake -DCMAKE_INSTALL_PREFIX=<path-to-install> <src-dir>
 
-where ``<path-to-zfp-config>`` is a directory containing ``zfp-config.cmake`` and ``<path-to-hdf5>`` is a directory containing HDF5_ ``include`` and ``lib`` directories.
+where ``<path-to-zfp-config>`` is a directory containing either ``zfp-config.cmake`` (CMake-built ZFP) or ZFP ``include`` and ``lib`` directories (Make-built ZFP), and ``<path-to-hdf5>`` is a directory containing HDF5_ ``include`` and ``lib`` directories.
 Furthermore, ``src-dir`` is the directory where the H5Z-ZFP_ source is located and ``path-to-install`` is the directory in which the resulting *plugin* and *library* will be installed.
 Once ``cmake`` has finished successfully, you can build and install the filter using the command...
 

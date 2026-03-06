@@ -73,7 +73,13 @@ if ((HDF5_IS_PARALLEL OR HDF5_ENABLE_PARALLEL) AND ("${HDF5_VERSION}" VERSION_EQ
 endif()
 
 # Find ZFP, relies on ZFP_DIR or ZFP_ROOT being set in environment.
-find_package(ZFP REQUIRED CONFIG)
+# Try CMake config mode first (for CMake-built ZFP), then fall back to
+# FindZFP.cmake module (for Makefile-built ZFP).
+find_package(ZFP QUIET CONFIG)
+if (NOT ZFP_FOUND)
+  list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+  find_package(ZFP REQUIRED)
+endif ()
 if (NOT ZFP_FOUND)
   message (FATAL_ERROR "ZFP is Required for h5z_zfp")
 endif ()

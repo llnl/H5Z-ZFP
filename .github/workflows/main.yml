@@ -79,6 +79,42 @@ jobs:
       shell: bash
 
     
+  linux-zfp-make:
+    name: Ubuntu GCC with Make-built ZFP
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq libhdf5-dev hdf5-tools gfortran
+        echo "CC=gcc" >> $GITHUB_ENV
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Get Sources
+      uses: actions/checkout@v6
+
+    - name: Build ZFP with Make
+      run: |
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
+        cd zfp
+        make BIT_STREAM_WORD_TYPE=uint8 BUILD_SHARED_LIBS=1 -j$(nproc)
+        echo "ZFP_DIR=$PWD" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Build H5Z-ZFP (CMake) and test
+      run: |
+        mkdir build
+        cd build
+        cmake -DFORTRAN_INTERFACE=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
+              ..
+        make -j$(nproc)
+        ctest -C Release . --output-on-failure
+      shell: bash
+
   linux-hdf5-versions:
     strategy:
       matrix:
