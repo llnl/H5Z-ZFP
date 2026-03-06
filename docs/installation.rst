@@ -92,7 +92,7 @@ In the case you want to specify the ``<path-to-hdf5>`` and ``<path-to-zfp>`` via
 ::
 
     CC=<C-compiler> FC=<Fortran-compiler> cmake -DCMAKE_INSTALL_PREFIX=<path-to-install>
-        -DCMAKE_PREFIX_PATH="<path-tohdf5>;<path-to-zfp>" <src-dir>
+        -DCMAKE_PREFIX_PATH="<path-to-hdf5>;<path-to-zfp>" <src-dir>
 
 .. note::
 
