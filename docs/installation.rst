@@ -87,7 +87,7 @@ Once ``cmake`` has finished successfully, you can build and install the filter u
 
     cmake --build . --target install
 
-In the case you want to specify the ``<path-to-hdf5>`` and ``<path-to-zfp>>`` via command-line to CMake_, the command looks like this...
+In the case you want to specify the ``<path-to-hdf5>`` and ``<path-to-zfp>`` via command-line to CMake_, the command looks like this...
 
 ::
 
