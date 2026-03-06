@@ -55,9 +55,9 @@ make
 
 ```bash
 mkdir build && cd build
-cmake -DBUILD_TESTING=ON ..
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON ..
 make
-ctest -C Release .
+ctest -C Release --output-on-failure
 ```
 
 ### Building Documentation
