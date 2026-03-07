@@ -41,7 +41,7 @@ Examples
 
 .. note::
 
-   The examples below assume H5Z-ZFP has been configured to run tests by either a preceding ``make check`` (if using a vanilla ``gmake`` build) or ``make test`` (if using a ``cmake`` build).
+   The examples below assume H5Z-ZFP has been configured and built with ``-DBUILD_TESTING=ON`` and tests have been run via ``ctest``.
 
 In the examples below, we use ``h5repack`` with the example data file, ``mesh.h5`` in the tests directory.
 

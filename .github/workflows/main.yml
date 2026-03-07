@@ -42,7 +42,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -qq libhdf5-dev
         sudo apt-get install -qq hdf5-tools
-        echo "HDF5_HOME=/usr/include/hdf5/serial,/usr/lib/x86_64-linux-gnu/hdf5/serial,/usr/bin" >> $GITHUB_ENV
         # Set env vars
         echo "CC=gcc" >> $GITHUB_ENV
         echo "FC=gfortran" >> $GITHUB_ENV
@@ -58,10 +57,8 @@ jobs:
                  
     - name: install ZFP
       run: |
-        git clone https://github.com/LLNL/zfp.git
-        export HOME_DIR=$(echo ~)
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
         cd zfp
-        git checkout 1.0.0
         mkdir build;cd build
         cmake -D ZFP_BIT_STREAM_WORD_SIZE=8 -D BUILD_CFP=ON -D CMAKE_INSTALL_PREFIX=$PWD/zfp -D BUILD_TESTING=OFF -D BUILD_UTILITIES=OFF ..
         make install
@@ -73,12 +70,6 @@ jobs:
 # BUILD AND TEST H5Z-ZFP
 ##################################
 
-    - name: build (autotools) and check
-      run: |
-        make all
-        make check
-      shell: bash
-
     - name: build (cmake) and test
       run: |
         mkdir build; cd build
@@ -88,6 +79,42 @@ jobs:
       shell: bash
 
     
+  linux-zfp-make:
+    name: Ubuntu GCC with Make-built ZFP
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq libhdf5-dev hdf5-tools gfortran
+        echo "CC=gcc" >> $GITHUB_ENV
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Get Sources
+      uses: actions/checkout@v6
+
+    - name: Build ZFP with Make
+      run: |
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
+        cd zfp
+        make BIT_STREAM_WORD_TYPE=uint8 BUILD_SHARED_LIBS=1 -j$(nproc)
+        echo "ZFP_DIR=$PWD" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Build H5Z-ZFP (CMake) and test
+      run: |
+        mkdir build
+        cd build
+        cmake -DFORTRAN_INTERFACE=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
+              ..
+        make -j$(nproc)
+        ctest -C Release . --output-on-failure
+      shell: bash
+
   linux-hdf5-versions:
     strategy:
       matrix:
@@ -143,9 +170,8 @@ jobs:
 
     - name: Install ZFP
       run: |
-        git clone https://github.com/LLNL/zfp.git
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
         cd zfp
-        git checkout 1.0.0
         mkdir build
         cd build
         cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
@@ -172,6 +198,71 @@ jobs:
         ctest -C Release . --output-on-failure
       shell: bash
 
+  code-coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq libhdf5-dev hdf5-tools gfortran lcov
+        echo "CC=gcc" >> $GITHUB_ENV
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Get Sources
+      uses: actions/checkout@v6
+
+    - name: Install ZFP
+      run: |
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
+        cd zfp
+        mkdir build && cd build
+        cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
+              -DBUILD_CFP=ON \
+              -DCMAKE_INSTALL_PREFIX=$HOME/zfp-install \
+              -DBUILD_TESTING=OFF \
+              -DBUILD_UTILITIES=OFF \
+              ..
+        make -j$(nproc) install
+        echo "ZFP_HOME=$HOME/zfp-install" >> $GITHUB_ENV
+        echo "ZFP_DIR=$HOME/zfp-install" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Build with coverage flags
+      run: |
+        mkdir build && cd build
+        cmake -DFORTRAN_INTERFACE=ON \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_C_FLAGS="--coverage" \
+              -DCMAKE_Fortran_FLAGS="--coverage" \
+              -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+              -DCMAKE_SHARED_LINKER_FLAGS="--coverage" \
+              -DBUILD_TESTING=ON \
+              ..
+        make -j$(nproc)
+      shell: bash
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+      shell: bash
+
+    - name: Generate coverage report
+      run: |
+        lcov --capture --directory build --output-file coverage.info
+        lcov --remove coverage.info '/usr/*' '*/zfp/*' '*/test/*' --output-file coverage.info --ignore-errors unused
+        lcov --list coverage.info
+      shell: bash
+
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: coverage.info
+        fail_ci_if_error: false
+
   windows-build:
     name: 'Windows MSVC/Clang'
     defaults:
@@ -181,25 +272,19 @@ jobs:
     steps:
       - name: checkout repository
         uses: actions/checkout@v6
-      - name: install prerequisites
-        run: |
-          choco install \
-            unzip \
-            wget
       - name: setup MSVC Tools
         uses: ilammy/msvc-dev-cmd@v1
       - name: download HDF5 for Windows
         run: |
-          wget --quiet \
+          curl -sSLO \
             https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5-win-vs2022_cl.msi
       - name: Install HDF5 for Windows
         run: msiexec /i "hdf5-1.14.5-win-vs2022_cl.msi" /qn
         shell: cmd
       - name: Download and install ZFP
         run: |
-          git clone https://github.com/LLNL/zfp.git
+          git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
           cd zfp
-          git checkout 1.0.0
           mkdir -p build
           cd build
           cmake .. \

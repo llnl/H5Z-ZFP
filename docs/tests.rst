@@ -82,9 +82,8 @@ the need to use the filter as a plugin. Also, if you want to use Fortran support
 the HDF5_ library must have, of course, been configured and built with Fortran support
 as well.
 
-In addition, a number tests are performed in the Makefile which test the plugin
-by using some of the HDF5_ tools such as ``h5dump`` and ``h5repack``. Again, to
-use these tools to read data compressed with the H5Z-ZFP_ filter, you will need
+In addition, a number of tests use the HDF5_ tools such as ``h5dump`` and ``h5repack``.
+To use these tools to read data compressed with the H5Z-ZFP_ filter, you will need
 to inform the HDF5_ library where to find the filter plugin. For example..
 
 ::
