@@ -15,7 +15,7 @@ However, the HDF5_ library expects to get from H5Z-ZFP_ the endianness of the da
 
 This means that in the H5Z-ZFP_ plugin, we wind up having to un-byte-swap an already correct result read in a cross-endian context.
 That way, when HDF5_ gets the data and byte-swaps it as it is expecting to, it will produce the correct final result.
-There is an endianness test in the Makefile and two ZFP_ compressed example datasets for big-endian and little-endian machines to test that cross-endian reads/writes work correctly.
+There is an endianness test and two ZFP_ compressed example datasets for big-endian and little-endian machines to test that cross-endian reads/writes work correctly.
 
 Again, because most CPUs are now little-endian and because ZFP_ became available only after the industry mostly moved away from big-endian, it is highly unlikely that this inefficiency will be triggered.
 
