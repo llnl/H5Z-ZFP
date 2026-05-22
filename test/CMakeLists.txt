@@ -944,6 +944,27 @@ if (NOT MSVC)
 endif ()
 
 #------------------------------------------------------------------------------#
+# H5Z_class3_t string-configuration tests (requires H5ZFP_USE_CLASS3=ON)
+#------------------------------------------------------------------------------#
+if (H5ZFP_USE_CLASS3)
+  add_executable(test_str_config test_str_config.c)
+  target_compile_definitions(test_str_config PRIVATE H5Z_ZFP_USE_CLASS3)
+  target_link_libraries(test_str_config h5z_zfp_static)
+  if (NOT WIN32)
+    target_link_libraries(test_str_config m)
+  endif ()
+
+  add_test(NAME test-str-config         COMMAND $<TARGET_FILE:test_str_config>)
+  add_test(NAME test-str-config-cleanup COMMAND "${CMAKE_COMMAND}" -E remove test_zfp_str_config.h5)
+  set_tests_properties(test-str-config-cleanup PROPERTIES DEPENDS test-str-config)
+
+  set_tests_properties(test-str-config         PROPERTIES FIXTURES_SETUP    "str-config-cleanup")
+  set_tests_properties(test-str-config         PROPERTIES FIXTURES_REQUIRED "str-config")
+  set_tests_properties(test-str-config-cleanup PROPERTIES FIXTURES_REQUIRED "str-config-cleanup")
+  set_tests_properties(test-str-config-cleanup PROPERTIES FIXTURES_CLEANUP  "str-config")
+endif ()
+
+#------------------------------------------------------------------------------#
 # Version compatibility tests
 #------------------------------------------------------------------------------#
 set(H5FILES ${CMAKE_CURRENT_SOURCE_DIR}/test_zfp_030040.h5 ${CMAKE_CURRENT_SOURCE_DIR}/test_zfp_030235.h5 ${CMAKE_CURRENT_SOURCE_DIR}/test_zfp_110050.h5 ${CMAKE_CURRENT_SOURCE_DIR}/test_zfp_110xxx.h5)

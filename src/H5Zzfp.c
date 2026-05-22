@@ -40,8 +40,12 @@ and calls to bitstream methods with 'B ' as in
 #include "H5Spublic.h"
 #include "zfp.h"
 #define Z
-#define B 
+#define B
 #endif /* ] AS_SILO_BUILTIN */
+
+#ifdef H5Z_ZFP_USE_CLASS3
+#include "H5Zdevelop.h"
+#endif
 
 #include "H5Zzfp_plugin.h"
 #include "H5Zzfp_props_private.h"
@@ -112,19 +116,52 @@ const H5Z_class2_t H5Z_ZFP[1] = {{
 
 }};
 
+#ifdef H5Z_ZFP_USE_CLASS3
+static herr_t H5Z_zfp_set_config(const char *params, unsigned *flags,
+    size_t *cd_nelmts, unsigned cd_values[], size_t cd_values_size);
+static herr_t H5Z_zfp_get_config(unsigned flags, size_t cd_nelmts,
+    const unsigned cd_values[], char *buf, size_t *buf_size);
+
+const H5Z_class3_t H5Z_ZFP3[1] = {{
+    H5Z_CLASS3_T_VERS,
+    H5Z_FILTER_ZFP,
+    1,
+    1,
+    "zfp",
+    "ZFP compression (lossless and lossy floating-point / integer compression) "
+    "H5Z-ZFP-" H5Z_FILTER_ZFP_VERSION_STR " (ZFP-" ZFP_VERSION_STRING ")",
+    H5Z_zfp_can_apply,
+    H5Z_zfp_set_local,
+    H5Z_filter_zfp,
+    H5Z_zfp_set_config,
+    H5Z_zfp_get_config,
+}};
+#endif /* H5Z_ZFP_USE_CLASS3 */
+
 #ifdef H5Z_ZFP_AS_LIB
 int H5Z_zfp_initialize(void)
 {
     if (H5Zfilter_avail(H5Z_FILTER_ZFP))
         return 1;
-    if (H5Zregister(H5Z_ZFP)<0)
+#ifdef H5Z_ZFP_USE_CLASS3
+    if (H5Zregister(H5Z_ZFP3) < 0)
+#else
+    if (H5Zregister(H5Z_ZFP) < 0)
+#endif
         return -1;
     h5z_zfp_was_registered = 1;
     return 1;
 }
 #else
 H5PL_type_t H5PLget_plugin_type(void) {return H5PL_TYPE_FILTER;}
-const void *H5PLget_plugin_info(void) {return H5Z_ZFP;}
+const void *H5PLget_plugin_info(void)
+{
+#ifdef H5Z_ZFP_USE_CLASS3
+    return H5Z_ZFP3;
+#else
+    return H5Z_ZFP;
+#endif
+}
 #endif
 
 #ifndef H5Z_ZFP_AS_LIB
@@ -708,6 +745,629 @@ done:
     if (newbuf) free(newbuf);
     return retval ;
 }
+
+#ifdef H5Z_ZFP_USE_CLASS3
+
+#define H5Z_ZFP_RATE_NELMTS       4
+#define H5Z_ZFP_PRECISION_NELMTS  3
+#define H5Z_ZFP_ACCURACY_NELMTS   4
+#define H5Z_ZFP_EXPERT_NELMTS     6
+#define H5Z_ZFP_REVERSIBLE_NELMTS 1
+#define H5Z_ZFP_DOUBLE_STR_MAX    32
+
+/* Compile-time assertion: H5Pset_zfp_*_cdata macros type-pun a double across
+ * two unsigned ints. */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Static_assert(sizeof(double) == 2 * sizeof(unsigned int),
+    "H5Pset_zfp_*_cdata type-puns double across two unsigned ints: sizes must match");
+#else
+typedef char h5z_zfp_size_check_[(sizeof(double) == 2 * sizeof(unsigned int)) ? 1 : -1];
+#endif
+
+/* Convenience error macro — requires _funcname_ to be in scope. */
+#define ZFP_ERR(maj, min, msg) \
+    H5Epush(H5E_DEFAULT, __FILE__, _funcname_, __LINE__, \
+            H5E_ERR_CLS, (maj), (min), (msg))
+
+/* ---------------------------------------------------------------------------
+ * set_config: parse a TOML-subset key=value parameter string and populate
+ * the in-memory cd_values array (the "mem format" used before set_local runs).
+ *
+ * Supported parameter strings (mode inferred from keys or explicit):
+ *   rate = <double>
+ *   precision = <int>  (or prec = <int>)
+ *   accuracy = <double>  (or acc = <double>)
+ *   minbits = <int>, maxbits = <int>, maxprec = <int>, minexp = <int>
+ *   reversible = true
+ *   mode = "rate"|"precision"|"accuracy"|"expert"|"reversible"  (explicit)
+ * --------------------------------------------------------------------------- */
+static herr_t
+H5Z_zfp_set_config(const char *params, unsigned *flags,
+    size_t *cd_nelmts, unsigned cd_values[], size_t cd_values_size)
+{
+    static char const *_funcname_ = "H5Z_zfp_set_config";
+    int mode = 0;
+
+    (void)flags;
+
+    /* --- Determine mode --------------------------------------------------- */
+
+    /* Empty / NULL config → ZFP default (reversible, consistent with zfp Python binding) */
+    if (!params || !*params) {
+        mode = H5Z_ZFP_MODE_REVERSIBLE;
+    } else {
+        /* Detect which mode-associated keys are present — checked once here,
+         * used for both mode inference and conflict validation below. */
+        int has_rate = H5Zconfig_has_key(params, "rate")      > 0;
+        int has_prec = H5Zconfig_has_key(params, "precision") > 0 ||
+                       H5Zconfig_has_key(params, "prec")      > 0;
+        int has_acc  = H5Zconfig_has_key(params, "accuracy")  > 0 ||
+                       H5Zconfig_has_key(params, "acc")        > 0;
+        int has_exp  = H5Zconfig_has_key(params, "minbits")   > 0;
+        int has_rev_key  = H5Zconfig_has_key(params, "reversible") > 0;
+        int has_rev_true = 0;
+
+        if (has_rev_key) {
+            hbool_t rev_bool = 0;
+            if (H5Zconfig_get_bool(params, "reversible", &rev_bool) < 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                    "reversible value must be a TOML boolean (true or false)");
+                return -1;
+            }
+            has_rev_true = (int)rev_bool;
+        }
+
+        /* Determine mode: explicit mode= key takes priority; otherwise infer */
+        {
+            char   mode_str[32] = "";
+            size_t mode_str_sz  = sizeof(mode_str);
+            htri_t has_mode_key = H5Zconfig_get_str(params, "mode", mode_str, &mode_str_sz);
+
+            if (has_mode_key < 0) {
+                ZFP_ERR(H5E_CANTGET, H5E_BADVALUE, "failed to get 'mode' key");
+                return -1;
+            }
+
+            /* Guard against truncation: valid mode names are at most 10 chars */
+            if (has_mode_key > 0 && mode_str_sz >= sizeof(mode_str)) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                    "unknown ZFP mode string (expected rate/precision/accuracy/expert/reversible)");
+                return -1;
+            }
+
+            if (has_mode_key > 0) {
+                if      (strcmp(mode_str, "rate")       == 0) mode = H5Z_ZFP_MODE_RATE;
+                else if (strcmp(mode_str, "precision")  == 0) mode = H5Z_ZFP_MODE_PRECISION;
+                else if (strcmp(mode_str, "accuracy")   == 0) mode = H5Z_ZFP_MODE_ACCURACY;
+                else if (strcmp(mode_str, "expert")     == 0) mode = H5Z_ZFP_MODE_EXPERT;
+                else if (strcmp(mode_str, "reversible") == 0) mode = H5Z_ZFP_MODE_REVERSIBLE;
+                else {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                        "unknown ZFP mode string (expected rate/precision/accuracy/expert/reversible)");
+                    return -1;
+                }
+            } else {
+                /* Infer mode; exactly one mode-determining key must be present */
+                int mode_count = has_rate + has_prec + has_acc + has_exp + has_rev_true;
+                if (mode_count > 1) {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                        "ambiguous ZFP mode: only one mode-determining key may be present "
+                        "(rate / precision / accuracy / minbits / reversible)");
+                    return -1;
+                }
+                if (mode_count == 0) {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                        "cannot determine ZFP mode: set 'mode' key or supply exactly one of "
+                        "rate / precision / accuracy / minbits / reversible=true");
+                    return -1;
+                }
+                if      (has_rate)     mode = H5Z_ZFP_MODE_RATE;
+                else if (has_prec)     mode = H5Z_ZFP_MODE_PRECISION;
+                else if (has_acc)      mode = H5Z_ZFP_MODE_ACCURACY;
+                else if (has_exp)      mode = H5Z_ZFP_MODE_EXPERT;
+                else                   mode = H5Z_ZFP_MODE_REVERSIBLE;
+            }
+        }
+
+        /* Unified conflict check: reject keys that belong to other modes */
+        {
+            int conflict = 0;
+            switch (mode) {
+                case H5Z_ZFP_MODE_RATE:
+                    conflict = has_prec || has_acc || has_exp || has_rev_key; break;
+                case H5Z_ZFP_MODE_PRECISION:
+                    conflict = has_rate || has_acc || has_exp || has_rev_key; break;
+                case H5Z_ZFP_MODE_ACCURACY:
+                    conflict = has_rate || has_prec || has_exp || has_rev_key; break;
+                case H5Z_ZFP_MODE_EXPERT:
+                    conflict = has_rate || has_prec || has_acc || has_rev_key; break;
+                case H5Z_ZFP_MODE_REVERSIBLE:
+                    conflict = has_rate || has_prec || has_acc || has_exp; break;
+                default: break;
+            }
+            if (conflict) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
+                    "extra keys not valid for the specified ZFP mode");
+                return -1;
+            }
+        }
+    }
+
+    /* --- Populate cd_values for the detected mode ------------------------- */
+    switch (mode) {
+
+        case H5Z_ZFP_MODE_RATE: {
+            double rate = 0;
+            if (H5Zconfig_get_double(params, "rate", &rate) <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'rate' parameter");
+                return -1;
+            }
+            if (rate < 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "rate must be non-negative");
+                return -1;
+            }
+            *cd_nelmts = H5Z_ZFP_RATE_NELMTS;
+            if (cd_values) {
+                if (cd_values_size < H5Z_ZFP_RATE_NELMTS) {
+                    ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "cd_values buffer too small for rate mode");
+                    return -1;
+                }
+                size_t n = cd_values_size;
+                H5Pset_zfp_rate_cdata(rate, n, cd_values);
+            }
+            break;
+        }
+
+        case H5Z_ZFP_MODE_PRECISION: {
+            int64_t prec = 0;
+            htri_t found = H5Zconfig_get_int(params, "precision", &prec);
+            if (found <= 0)
+                found = H5Zconfig_get_int(params, "prec", &prec);
+            if (found <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'precision'/'prec' parameter");
+                return -1;
+            }
+            if (prec < 0 || prec > (int64_t)ZFP_MAX_PREC) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "precision out of range [0, ZFP_MAX_PREC]");
+                return -1;
+            }
+            *cd_nelmts = H5Z_ZFP_PRECISION_NELMTS;
+            if (cd_values) {
+                if (cd_values_size < H5Z_ZFP_PRECISION_NELMTS) {
+                    ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "cd_values buffer too small for precision mode");
+                    return -1;
+                }
+                size_t n = cd_values_size;
+                H5Pset_zfp_precision_cdata((unsigned)prec, n, cd_values);
+            }
+            break;
+        }
+
+        case H5Z_ZFP_MODE_ACCURACY: {
+            double acc = 0;
+            htri_t found = H5Zconfig_get_double(params, "accuracy", &acc);
+            if (found <= 0)
+                found = H5Zconfig_get_double(params, "acc", &acc);
+            if (found <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'accuracy'/'acc' parameter");
+                return -1;
+            }
+            if (acc < 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "accuracy must be non-negative");
+                return -1;
+            }
+            *cd_nelmts = H5Z_ZFP_ACCURACY_NELMTS;
+            if (cd_values) {
+                if (cd_values_size < H5Z_ZFP_ACCURACY_NELMTS) {
+                    ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "cd_values buffer too small for accuracy mode");
+                    return -1;
+                }
+                size_t n = cd_values_size;
+                H5Pset_zfp_accuracy_cdata(acc, n, cd_values);
+            }
+            break;
+        }
+
+        case H5Z_ZFP_MODE_EXPERT: {
+            int64_t minbits = 0, maxbits = 0, maxprec = 0, minexp_val = 0;
+            if (H5Zconfig_get_int(params, "minbits", &minbits) <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'minbits' parameter");
+                return -1;
+            }
+            if (H5Zconfig_get_int(params, "maxbits", &maxbits) <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'maxbits' parameter");
+                return -1;
+            }
+            if (H5Zconfig_get_int(params, "maxprec", &maxprec) <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'maxprec' parameter");
+                return -1;
+            }
+            if (H5Zconfig_get_int(params, "minexp", &minexp_val) <= 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'minexp' parameter");
+                return -1;
+            }
+            if (minbits < 0 || maxbits < 0 || maxprec < 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "expert minbits/maxbits/maxprec must be non-negative");
+                return -1;
+            }
+            if ((uint64_t)minbits > (uint64_t)maxbits) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "expert minbits must be <= maxbits");
+                return -1;
+            }
+            if ((uint64_t)maxbits > (uint64_t)ZFP_MAX_BITS) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "expert maxbits exceeds ZFP_MAX_BITS");
+                return -1;
+            }
+            if (maxprec > (int64_t)ZFP_MAX_PREC) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "expert maxprec exceeds ZFP_MAX_PREC");
+                return -1;
+            }
+            /* ZFP_MIN_EXP - 1 is the special sentinel that encodes reversible
+             * mode inside expert-mode parameters; reject anything below it. */
+            if (minexp_val < (int64_t)(ZFP_MIN_EXP - 1)) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "expert minexp below ZFP_MIN_EXP-1");
+                return -1;
+            }
+            *cd_nelmts = H5Z_ZFP_EXPERT_NELMTS;
+            if (cd_values) {
+                if (cd_values_size < H5Z_ZFP_EXPERT_NELMTS) {
+                    ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "cd_values buffer too small for expert mode");
+                    return -1;
+                }
+                size_t n = cd_values_size;
+                H5Pset_zfp_expert_cdata((unsigned)minbits, (unsigned)maxbits,
+                    (unsigned)maxprec, (int)minexp_val, n, cd_values);
+            }
+            break;
+        }
+
+#if ZFP_VERSION_NO >= 0x0550
+        case H5Z_ZFP_MODE_REVERSIBLE: {
+            *cd_nelmts = H5Z_ZFP_REVERSIBLE_NELMTS;
+            if (cd_values) {
+                if (cd_values_size < H5Z_ZFP_REVERSIBLE_NELMTS) {
+                    ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "cd_values buffer too small for reversible mode");
+                    return -1;
+                }
+                size_t n = cd_values_size;
+                H5Pset_zfp_reversible_cdata(n, cd_values);
+            }
+            break;
+        }
+#endif
+
+        default:
+            ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "invalid ZFP mode value");
+            return -1;
+    }
+
+    return 0;
+}
+
+/* Format a double as %.17e into buf[n] with '.' as decimal separator
+ * regardless of LC_NUMERIC locale.  Returns the snprintf-style character count
+ * (negative on encoding error, >= n if the buffer was too small). */
+static int
+h5z_zfp_fmt_double(char *buf, size_t n, double val)
+{
+    int r = snprintf(buf, n, "%.17e", val);
+    /* Some locales (e.g. de_DE) replace '.' with ',' in printf float output.
+     * TOML requires '.'; scan and fix the one decimal separator if present.
+     * Guard on r > 0 && r < (int)n: a negative r means encoding error (buf
+     * contents indeterminate); r >= (int)n means truncation (no NUL in buf). */
+    if (r > 0 && r < (int)n) {
+        char *p;
+        for (p = buf; *p; p++)
+            if (*p == ',') { *p = '.'; break; }
+    }
+    return r;
+}
+
+/* ---------------------------------------------------------------------------
+ * h5z_zfp_emit_mode_toml: write a TOML mode string into tmp[tmp_size] by
+ * calling zfp_stream_compression_mode() for introspection.  zfld is optional
+ * (NULL when the field layout is unknown); without it, rate mode falls back to
+ * the raw expert parameter string.  fb_* are the fallback expert params used
+ * when the mode cannot be identified at a higher level.
+ * Returns 0 on success, -1 on error (error pushed to HDF5 stack).
+ * --------------------------------------------------------------------------- */
+#if ZFP_VERSION_NO >= 0x0550
+static herr_t
+h5z_zfp_emit_mode_toml(zfp_stream *zstr, zfp_field *zfld,
+    unsigned fb_minbits, unsigned fb_maxbits,
+    unsigned fb_maxprec, int fb_minexp,
+    char *tmp, size_t tmp_size, int *nchars)
+{
+    static char const *_funcname_ = "h5z_zfp_emit_mode_toml";
+
+    switch (Z zfp_stream_compression_mode(zstr)) {
+
+        case zfp_mode_fixed_rate: {
+            if (!zfld) {
+                /* No field info — can't compute rate; fall back to raw expert params */
+                *nchars = snprintf(tmp, tmp_size,
+                    "mode = \"expert\", minbits = %u, maxbits = %u, maxprec = %u, minexp = %d",
+                    fb_minbits, fb_maxbits, fb_maxprec, fb_minexp);
+            } else {
+                uint   zdims = Z zfp_field_dimensionality(zfld);
+#if ZFP_VERSION_NO >= 0x1000
+                double rate  = Z zfp_stream_rate(zstr, zdims);
+#else
+                zfp_type ztype = Z zfp_field_type(zfld);
+                double   rate  = Z zfp_stream_rate(zstr, ztype, zdims);
+#endif
+                char d[H5Z_ZFP_DOUBLE_STR_MAX] = {0};
+                if (h5z_zfp_fmt_double(d, sizeof(d), rate) < 0) {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "float formatting failed");
+                    return -1;
+                }
+                *nchars = snprintf(tmp, tmp_size, "mode = \"rate\", rate = %s", d);
+            }
+            break;
+        }
+
+        case zfp_mode_fixed_precision:
+            *nchars = snprintf(tmp, tmp_size,
+                "mode = \"precision\", prec = %u", Z zfp_stream_precision(zstr));
+            break;
+
+        case zfp_mode_fixed_accuracy: {
+            double acc = Z zfp_stream_accuracy(zstr);
+            char d[H5Z_ZFP_DOUBLE_STR_MAX] = {0};
+            if (h5z_zfp_fmt_double(d, sizeof(d), acc) < 0) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "float formatting failed");
+                return -1;
+            }
+            *nchars = snprintf(tmp, tmp_size, "mode = \"accuracy\", acc = %s", d);
+            break;
+        }
+
+        case zfp_mode_reversible:
+            *nchars = snprintf(tmp, tmp_size, "mode = \"reversible\"");
+            break;
+
+        default: /* rate (no field) or truly expert */
+            *nchars = snprintf(tmp, tmp_size,
+                "mode = \"expert\", minbits = %u, maxbits = %u, maxprec = %u, minexp = %d",
+                fb_minbits, fb_maxbits, fb_maxprec, fb_minexp);
+            break;
+    }
+    return 0;
+}
+#endif /* ZFP_VERSION_NO >= 0x0550 */
+
+/* ---------------------------------------------------------------------------
+ * get_config helpers: reconstruct a TOML-subset parameter string from
+ * cd_values in each of the two layouts used by the ZFP filter.
+ *
+ * from_mem   — cd_values[0] is 1..5 (set by set_config / H5Pset_zfp_*)
+ * from_header — cd_values[0] is the version word written by set_local;
+ *               the ZFP binary header occupies cd_values[1..].
+ *
+ * Both helpers write into caller-supplied tmp[tmp_size] and set *nchars to
+ * the snprintf return value.  Return 0 on success, -1 on error.
+ * --------------------------------------------------------------------------- */
+
+static herr_t
+H5Z_zfp_get_config_from_mem(size_t cd_nelmts, const unsigned cd_values[],
+    char *tmp, size_t tmp_size, int *nchars)
+{
+    static char const *_funcname_ = "H5Z_zfp_get_config_from_mem";
+
+    switch (cd_values[0]) {
+
+        case H5Z_ZFP_MODE_RATE: {
+            double rate;
+            if (cd_nelmts < H5Z_ZFP_RATE_NELMTS) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "cd_values too short for rate mode");
+                return -1;
+            }
+            memcpy(&rate, &cd_values[2], sizeof(double));
+            {
+                char d[H5Z_ZFP_DOUBLE_STR_MAX] = {0};
+                if (h5z_zfp_fmt_double(d, sizeof(d), rate) < 0) {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "float formatting failed");
+                    return -1;
+                }
+                *nchars = snprintf(tmp, tmp_size, "mode = \"rate\", rate = %s", d);
+            }
+            break;
+        }
+
+        case H5Z_ZFP_MODE_PRECISION: {
+            if (cd_nelmts < H5Z_ZFP_PRECISION_NELMTS) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "cd_values too short for precision mode");
+                return -1;
+            }
+            *nchars = snprintf(tmp, tmp_size, "mode = \"precision\", prec = %u", cd_values[2]);
+            break;
+        }
+
+        case H5Z_ZFP_MODE_ACCURACY: {
+            double acc;
+            if (cd_nelmts < H5Z_ZFP_ACCURACY_NELMTS) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "cd_values too short for accuracy mode");
+                return -1;
+            }
+            memcpy(&acc, &cd_values[2], sizeof(double));
+            {
+                char d[H5Z_ZFP_DOUBLE_STR_MAX] = {0};
+                if (h5z_zfp_fmt_double(d, sizeof(d), acc) < 0) {
+                    ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "float formatting failed");
+                    return -1;
+                }
+                *nchars = snprintf(tmp, tmp_size, "mode = \"accuracy\", acc = %s", d);
+            }
+            break;
+        }
+
+        case H5Z_ZFP_MODE_EXPERT: {
+            if (cd_nelmts < H5Z_ZFP_EXPERT_NELMTS) {
+                ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "cd_values too short for expert mode");
+                return -1;
+            }
+#if ZFP_VERSION_NO >= 0x0550
+            {
+                zfp_stream *zse = Z zfp_stream_open(NULL);
+                if (zse) {
+                    Z zfp_stream_set_params(zse,
+                        cd_values[2], cd_values[3], cd_values[4], (int)cd_values[5]);
+                    herr_t ret = h5z_zfp_emit_mode_toml(zse, NULL,
+                        cd_values[2], cd_values[3], cd_values[4], (int)cd_values[5],
+                        tmp, tmp_size, nchars);
+                    Z zfp_stream_close(zse);
+                    if (ret < 0) return -1;
+                } else {
+                    *nchars = snprintf(tmp, tmp_size,
+                        "mode = \"expert\", minbits = %u, maxbits = %u, maxprec = %u, minexp = %d",
+                        cd_values[2], cd_values[3], cd_values[4], (int)cd_values[5]);
+                }
+            }
+#else
+            *nchars = snprintf(tmp, tmp_size,
+                "mode = \"expert\", minbits = %u, maxbits = %u, maxprec = %u, minexp = %d",
+                cd_values[2], cd_values[3], cd_values[4], (int)cd_values[5]);
+#endif
+            break;
+        }
+
+#if ZFP_VERSION_NO >= 0x0550
+        case H5Z_ZFP_MODE_REVERSIBLE:
+            *nchars = snprintf(tmp, tmp_size, "mode = \"reversible\"");
+            break;
+#endif
+
+        default:
+            ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "unknown ZFP mode in cd_values");
+            return -1;
+    }
+
+    return 0;
+}
+
+static herr_t
+H5Z_zfp_get_config_from_header(size_t cd_nelmts, const unsigned cd_values[],
+    char *tmp, size_t tmp_size, int *nchars)
+{
+    static char const *_funcname_ = "H5Z_zfp_get_config_from_header";
+    H5T_order_t swap = H5T_ORDER_NONE;
+    uint64 zfp_mode_val = 0, zfp_meta = 0;
+    zfp_stream *zstr   = NULL;
+    zfp_field  *zfld   = NULL;
+    herr_t      retval = 0;
+
+    if (cd_nelmts < 2) {
+        ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "cd_values too short for ZFP header format");
+        return -1;
+    }
+
+    if (!get_zfp_info_from_cd_values(cd_nelmts - 1, &cd_values[1],
+            &zfp_mode_val, &zfp_meta, &swap))
+        return -1;
+
+    zstr = Z zfp_stream_open(NULL);
+    if (!zstr) {
+        ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "zfp_stream_open() failed");
+        return -1;
+    }
+    Z zfp_stream_set_mode(zstr, zfp_mode_val);
+
+    zfld = Z zfp_field_alloc();
+    if (!zfld) {
+        ZFP_ERR(H5E_RESOURCE, H5E_NOSPACE, "zfp_field_alloc() failed");
+        retval = -1; goto done;
+    }
+    Z zfp_field_set_metadata(zfld, zfp_meta);
+
+#if ZFP_VERSION_NO >= 0x0550
+    if (h5z_zfp_emit_mode_toml(zstr, zfld,
+            zstr->minbits, zstr->maxbits, zstr->maxprec, zstr->minexp,
+            tmp, tmp_size, nchars) < 0) {
+        retval = -1; goto done;
+    }
+#else
+    /* Older ZFP: no public mode query API; zfp_stream fields are declared in zfp.h */
+    *nchars = snprintf(tmp, tmp_size,
+        "mode = \"expert\", minbits = %u, maxbits = %u, maxprec = %u, minexp = %d",
+        zstr->minbits, zstr->maxbits, zstr->maxprec, zstr->minexp);
+#endif
+
+done:
+    Z zfp_field_free(zfld);
+    Z zfp_stream_close(zstr);
+    return retval;
+}
+
+/* ---------------------------------------------------------------------------
+ * get_config: reconstruct a human-readable TOML-subset parameter string from
+ * cd_values.  Handles two layouts:
+ *
+ *  (a) mem format  — cd_values[0] is 1..5 (set by set_config / H5Pset_zfp_*)
+ *  (b) header format — cd_values[0] is the version word written by set_local;
+ *      the ZFP binary header occupies cd_values[1..].
+ *
+ * Float values are formatted with %.17e for exact IEEE 754 round-trips.
+ * %.17e always emits a decimal point and exponent so TOML parsers treat the
+ * value as a float rather than an integer (%.17g drops the decimal point for
+ * whole numbers like 8.0 → "8", which TOML would read as an integer).
+ * --------------------------------------------------------------------------- */
+static herr_t
+H5Z_zfp_get_config(unsigned flags, size_t cd_nelmts, const unsigned cd_values[],
+    char *buf, size_t *buf_size)
+{
+    static char const *_funcname_ = "H5Z_zfp_get_config";
+    char tmp[256];
+    int  nchars = 0;
+
+    (void)flags;
+
+    if (cd_nelmts == 0 || cd_values == NULL) {
+        ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "empty cd_values");
+        return -1;
+    }
+
+    /* ---- (a) Memory (pre-set_local) format: cd_values[0] in 1..5 ---------
+     * The header format written by set_local encodes ZFP_VERSION_NO in the
+     * upper 16 bits of cd_values[0] (ZFP_VERSION_NO >= 0x0500), so the
+     * version word is always > 5 and cannot collide with the mode constants. */
+    if (cd_values[0] >= 1 && cd_values[0] <= 5) {
+        if (H5Z_zfp_get_config_from_mem(cd_nelmts, cd_values, tmp, sizeof(tmp), &nchars) < 0)
+            return -1;
+    } else {
+        if (H5Z_zfp_get_config_from_header(cd_nelmts, cd_values, tmp, sizeof(tmp), &nchars) < 0)
+            return -1;
+    }
+
+    if (nchars < 0) {
+        ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "failed to format ZFP parameter string");
+        return -1;
+    } else if (nchars >= (int)sizeof(tmp)) {
+        ZFP_ERR(H5E_RESOURCE, H5E_OVERFLOW, "ZFP parameter string exceeds internal buffer");
+        return -1;
+    }
+
+    /* Populate caller's buffer when provided.  Check capacity before overwriting
+     * *buf_size so the check uses the incoming value.  The library passes
+     * *buf_size = nchars + 1 (total bytes, NUL slot included), consistent with
+     * standard C buffer-size conventions. */
+    if (buf) {
+        if (buf_size && *buf_size < (size_t)nchars + 1) {
+            ZFP_ERR(H5E_RESOURCE, H5E_OVERFLOW, "output buffer too small for ZFP parameter string");
+            return -1;
+        }
+        memcpy(buf, tmp, (size_t)nchars + 1);
+    }
+
+    /* Report required length (excl. NUL) */
+    if (buf_size)
+        *buf_size = (size_t)nchars;
+
+    return 0;
+}
+
+#undef ZFP_ERR
+
+#endif /* H5Z_ZFP_USE_CLASS3 */
 
 #undef Z
 #undef B

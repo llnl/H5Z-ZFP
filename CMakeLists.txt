@@ -50,6 +50,10 @@ option(FORTRAN_INTERFACE "Enable the Fortran interface" ON)
 if (FORTRAN_INTERFACE)
   enable_language(Fortran)
 endif ()
+
+option(H5ZFP_USE_CLASS3
+    "Build with H5Z_class3_t string filter-configuration API (requires HDF5 >= 2.2.0)"
+    OFF)
 #------------------------------------------------------------------------------#
 # Some boilerplate to setup nice output directories
 #------------------------------------------------------------------------------#
@@ -65,6 +69,37 @@ set(CMAKE_INSTALL_CMAKEDIR lib/cmake/h5z_zfp)
 HDF5_SUPPORT ()
 if (NOT HDF5_FOUND)
   message (FATAL_ERROR "HDF5 is Required for h5z_zfp")
+endif ()
+
+# Verify the HDF5 build actually provides H5Z_class3_t when requested.
+if (H5ZFP_USE_CLASS3)
+  include (CheckCSourceCompiles)
+  find_package (MPI QUIET COMPONENTS C)
+  set (_saved_cmake_required_includes "${CMAKE_REQUIRED_INCLUDES}")
+  set (_saved_cmake_required_libraries "${CMAKE_REQUIRED_LIBRARIES}")
+  list (APPEND CMAKE_REQUIRED_INCLUDES  ${HDF5_INCLUDE_DIRS})
+  list (APPEND CMAKE_REQUIRED_LIBRARIES ${HDF5_LIBRARIES})
+  if (MPI_C_FOUND)
+    list (APPEND CMAKE_REQUIRED_INCLUDES  ${MPI_C_INCLUDE_DIRS})
+    list (APPEND CMAKE_REQUIRED_LIBRARIES ${MPI_C_LIBRARIES})
+  endif ()
+  check_c_source_compiles ("
+#include \"hdf5.h\"
+#include \"H5Zdevelop.h\"
+#ifndef H5Z_CLASS3_T_VERS
+#error H5Z_CLASS3_T_VERS not defined
+#endif
+int main(void) { return 0; }
+" _H5Z_CLASS3_T_VERS_FOUND)
+  set (CMAKE_REQUIRED_INCLUDES  "${_saved_cmake_required_includes}")
+  set (CMAKE_REQUIRED_LIBRARIES "${_saved_cmake_required_libraries}")
+  if (NOT _H5Z_CLASS3_T_VERS_FOUND)
+    message (FATAL_ERROR
+      "H5ZFP_USE_CLASS3 is ON but the HDF5 found at '${HDF5_ROOT}' "
+      "does not define H5Z_CLASS3_T_VERS (H5Zdevelop.h). "
+      "Point HDF5_ROOT at a compatible HDF5 >= 2.2.0 installation.")
+  endif ()
+  message (STATUS "H5ZFP: H5Z_class3_t string-configuration support enabled")
 endif ()
 
 # Find MPI depending on if HDF5 needs MPI.

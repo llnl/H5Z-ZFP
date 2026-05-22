@@ -4,11 +4,12 @@ name: h5z-zfp
 #Triggers the workflow on push or pull requests.
 
 # TODO: REMOVE feat-cmake_tests before merging
-on: 
+on:
   push:
-    branches: [ master ] 
+    branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
 
 # Using concurrency to cancel any in-progress job or run
 concurrency:
@@ -49,7 +50,7 @@ jobs:
         
  # Checks-out the repository under $GITHUB_WORKSPACE so the job can access it.
     - name: Get Sources
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
 ##################################
 # INSTALL ZFP
@@ -93,7 +94,7 @@ jobs:
         echo "FC=gfortran" >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
     - name: Build ZFP with Make
       run: |
@@ -142,7 +143,7 @@ jobs:
         echo "CXX=g++"  >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
     - name: Build HDF5 from source
       run: |
@@ -198,6 +199,78 @@ jobs:
         ctest -C Release . --output-on-failure
       shell: bash
 
+  linux-class3:
+    name: Ubuntu GCC with H5ZFP_USE_CLASS3=ON (HDF5 develop — pending upstream merge)
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip-ci')"
+    # H5Z_class3_t is not yet in HDF5 develop; allow failure until the fixes land upstream.
+    continue-on-error: true
+
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -qq cmake gfortran
+        echo "CC=gcc" >> $GITHUB_ENV
+        echo "FC=gfortran" >> $GITHUB_ENV
+
+    - name: Get Sources
+      uses: actions/checkout@v4
+
+    - name: Build HDF5 develop from source
+      run: |
+        git clone --depth 1 --branch develop https://github.com/HDFGroup/hdf5.git
+        cd hdf5
+        mkdir build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DHDF5_BUILD_FORTRAN=ON \
+              -DHDF5_BUILD_TOOLS=ON \
+              -DHDF5_BUILD_EXAMPLES=OFF \
+              -DHDF5_BUILD_HL_LIB=OFF \
+              -DBUILD_TESTING=OFF \
+              -DHDF5_BUILD_DOC=OFF \
+              -DBUILD_SHARED_LIBS=ON \
+              -DBUILD_STATIC_LIBS=ON \
+              -DCMAKE_INSTALL_PREFIX=$HOME/hdf5-install \
+              ..
+        make -j$(nproc)
+        make install
+        echo "HDF5_ROOT=$HOME/hdf5-install" >> $GITHUB_ENV
+        echo "HDF5_DIR=$HOME/hdf5-install/share/cmake" >> $GITHUB_ENV
+        echo "$HOME/hdf5-install/bin" >> $GITHUB_PATH
+      shell: bash
+
+    - name: Install ZFP
+      run: |
+        git clone --depth 1 --branch 1.0.0 https://github.com/LLNL/zfp.git
+        cd zfp
+        mkdir build && cd build
+        cmake -DZFP_BIT_STREAM_WORD_SIZE=8 \
+              -DBUILD_CFP=ON \
+              -DCMAKE_INSTALL_PREFIX=$HOME/zfp-install \
+              -DBUILD_TESTING=OFF \
+              -DBUILD_UTILITIES=OFF \
+              ..
+        make -j$(nproc)
+        make install
+        echo "ZFP_HOME=$HOME/zfp-install" >> $GITHUB_ENV
+        echo "ZFP_DIR=$HOME/zfp-install" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Build H5Z-ZFP with H5ZFP_USE_CLASS3=ON and test
+      env:
+        HDF5_PLUGIN_PATH: ${{ github.workspace }}/build/lib
+      run: |
+        mkdir build && cd build
+        cmake -DH5ZFP_USE_CLASS3=ON \
+              -DFORTRAN_INTERFACE=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_TESTING=ON \
+              ..
+        make -j$(nproc)
+        ctest -C Release . --output-on-failure
+      shell: bash
+
   code-coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
@@ -212,7 +285,7 @@ jobs:
         echo "FC=gfortran" >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
     - name: Install ZFP
       run: |
@@ -271,7 +344,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
       - name: setup MSVC Tools
         uses: ilammy/msvc-dev-cmd@v1
       - name: download HDF5 for Windows
