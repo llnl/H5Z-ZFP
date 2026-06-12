@@ -148,8 +148,17 @@ int main(int argc, char **argv)
     cpid = setup_filter(1, chunk, zfpmode, rate, acc, prec, minbits, maxbits, maxprec, minexp);
     if (0 > (dsid = H5Dcreate(fid, "corrupted_data", H5T_NATIVE_DOUBLE, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
     if (0 > H5Dwrite(dsid, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf)) SET_ERROR(H5Dwrite);
-    off = 3496; // H5Dget_offset(dsid);
+#if H5_VERSION_GE(1,10,5)
+    {
+        hsize_t coord[1] = {0};
+        unsigned filter_mask;
+        /* H5Dget_offset returns HADDR_UNDEF for chunked datasets; use chunk info API instead */
+        if (0 > H5Dget_chunk_info_by_coord(dsid, coord, &filter_mask, &off, &siz)) SET_ERROR(H5Dget_chunk_info_by_coord);
+    }
+#else
+    off = 3496;
     siz = H5Dget_storage_size(dsid);
+#endif
     if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
     if (0 > H5Pclose(cpid)) SET_ERROR(H5Pclose);
 
