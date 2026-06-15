@@ -122,6 +122,20 @@ static herr_t H5Z_zfp_set_config(const char *params, unsigned *flags,
 static herr_t H5Z_zfp_get_config(unsigned flags, size_t cd_nelmts,
     const unsigned cd_values[], char *buf, size_t *buf_size);
 
+/* H5Z_CLASS3_NAME_MAX_LEN was added alongside the H5Z_func2_t / blob-field
+ * struct revision (HDF5 branch 6153).  Use it to detect the new layout. */
+#ifdef H5Z_CLASS3_NAME_MAX_LEN
+static size_t
+H5Z_filter_zfp3(unsigned int flags, size_t cd_nelmts,
+    const unsigned int cd_values[],
+    hid_t dxpl_id, const hsize_t *scaled, size_t ndims,
+    size_t nbytes, size_t *buf_size, void **buf)
+{
+    (void)dxpl_id; (void)scaled; (void)ndims;
+    return H5Z_filter_zfp(flags, cd_nelmts, cd_values, nbytes, buf_size, buf);
+}
+#endif /* H5Z_CLASS3_NAME_MAX_LEN */
+
 const H5Z_class3_t H5Z_ZFP3[1] = {{
     H5Z_CLASS3_T_VERS,
     H5Z_FILTER_ZFP,
@@ -132,9 +146,18 @@ const H5Z_class3_t H5Z_ZFP3[1] = {{
     "H5Z-ZFP-" H5Z_FILTER_ZFP_VERSION_STR " (ZFP-" ZFP_VERSION_STRING ")",
     H5Z_zfp_can_apply,
     H5Z_zfp_set_local,
-    H5Z_filter_zfp,
+#ifdef H5Z_CLASS3_NAME_MAX_LEN
+    H5Z_filter_zfp3,    /* H5Z_func2_t: extended signature (dxpl_id, scaled, ndims) */
     H5Z_zfp_set_config,
     H5Z_zfp_get_config,
+    NULL,               /* write_blob — reserved, must be NULL */
+    NULL,               /* read_blob  — reserved, must be NULL */
+    NULL,               /* close_blob — reserved, must be NULL */
+#else
+    H5Z_filter_zfp,     /* H5Z_func_t: original signature */
+    H5Z_zfp_set_config,
+    H5Z_zfp_get_config,
+#endif
 }};
 #endif /* H5Z_ZFP_USE_CLASS3 */
 
