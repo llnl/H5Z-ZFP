@@ -303,6 +303,8 @@ int main(int argc, char **argv)
     int highd = 0;
     int sixd = 0;
     int zfparr = 0;
+    int h5tarr1 = 4;
+    int h5tarr2 = 1;
     int help = 0;
 
     /* compression parameters (defaults taken from ZFP header) */
@@ -319,7 +321,7 @@ int main(int argc, char **argv)
 
     /* HDF5 related variables */
     hsize_t chunk = 256;
-    hid_t fid, dsid, idsid, sid, cpid;
+    hid_t fid, dsid, idsid, sid, cpid, darrid, iarrid;
 
     /* file arguments */
     strcpy(ofile, "test_zfp.h5");
@@ -351,6 +353,13 @@ int main(int argc, char **argv)
     if (doint) retval = 2;
     doint = 0;
 #endif
+    HANDLE_ARG(h5tarr1,(int) strtol(argv[i]+len2,0,10),"%d",first dimension of HDF5 array type);
+    HANDLE_ARG(h5tarr2,(int) strtol(argv[i]+len2,0,10),"%d",second dimension of HDF5 array type);
+    if (h5tarr1 * h5tarr2 <= 0)
+    {
+        h5tarr1 = 4;
+        h5tarr2 = 1;
+    }
 
     /* Advanced cases */
     HANDLE_SEP(Advanced cases)
@@ -379,14 +388,14 @@ int main(int argc, char **argv)
 
     /* create double data to write if we're not reading from an existing file */
     if (ifile[0] == '\0')
-        gen_data((size_t) npoints, noise, amp, (void**)&buf, TYPDBL);
+        gen_data((size_t) npoints * h5tarr1 * h5tarr2, noise, amp, (void**)&buf, TYPDBL);
     else
-        read_data(ifile, (size_t) npoints, &buf);
+        read_data(ifile, (size_t) npoints * h5tarr1 * h5tarr2, &buf);
 
     /* create integer data to write */
 
     if (doint)
-        gen_data((size_t) npoints, noise*100, amp*1000000, (void**)&ibuf, TYPINT);
+        gen_data((size_t) npoints * h5tarr1 * h5tarr2, noise*100, amp*1000000, (void**)&ibuf, TYPINT);
 
     /* create HDF5 file */
     if (0 > (fid = H5Fcreate(ofile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT))) SET_ERROR(H5Fcreate);
@@ -394,31 +403,65 @@ int main(int argc, char **argv)
     /* setup the 1D data space */
     if (0 > (sid = H5Screate_simple(1, &npoints, 0))) SET_ERROR(H5Screate_simple);
 
+    /* create array types if needed */
+    if (h5tarr1 * h5tarr2 > 1)
+    {
+	hsize_t tarrdims[2] = {(hsize_t) h5tarr2, (hsize_t) h5tarr1};
+	if (0 > (darrid = H5Tarray_create2(H5T_NATIVE_DOUBLE, 2, tarrdims))) SET_ERROR(H5Tarray_create2);
+	if (0 > (iarrid = H5Tarray_create2(H5T_NATIVE_INT, 2, tarrdims))) SET_ERROR(H5Tarray_create2);
+    }
+
     /* write the data WITHOUT compression */
     if (0 > (dsid = H5Dcreate(fid, "original", H5T_NATIVE_DOUBLE, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
     if (0 > H5Dwrite(dsid, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf)) SET_ERROR(H5Dwrite);
     if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
+    if (h5tarr1 * h5tarr2 > 1)
+    {
+        if (0 > (dsid = H5Dcreate(fid, "arr_original", darrid, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
+        if (0 > H5Dwrite(dsid, darrid, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf)) SET_ERROR(H5Dwrite);
+        if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
+    }
     if (doint)
     {
         if (0 > (idsid = H5Dcreate(fid, "int_original", H5T_NATIVE_INT, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
         if (0 > H5Dwrite(idsid, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ibuf)) SET_ERROR(H5Dwrite);
         if (0 > H5Dclose(idsid)) SET_ERROR(H5Dclose);
+        if (h5tarr1 * h5tarr2 > 1)
+        {
+            if (0 > (idsid = H5Dcreate(fid, "arr_int_original", iarrid, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
+            if (0 > H5Dwrite(idsid, iarrid, H5S_ALL, H5S_ALL, H5P_DEFAULT, ibuf)) SET_ERROR(H5Dwrite);
+            if (0 > H5Dclose(idsid)) SET_ERROR(H5Dclose);
+        }
     }
 
     /* write the data with requested compression */
     if (0 > (dsid = H5Dcreate(fid, "compressed", H5T_NATIVE_DOUBLE, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
     if (0 > H5Dwrite(dsid, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf)) SET_ERROR(H5Dwrite);
     if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
+    if (h5tarr1 * h5tarr2 > 1)
+    {
+        if (0 > (dsid = H5Dcreate(fid, "arr_compressed", darrid, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
+        if (0 > H5Dwrite(dsid, darrid, H5S_ALL, H5S_ALL, H5P_DEFAULT, buf)) SET_ERROR(H5Dwrite);
+        if (0 > H5Dclose(dsid)) SET_ERROR(H5Dclose);
+    }
     if (doint)
     {
         if (0 > (idsid = H5Dcreate(fid, "int_compressed", H5T_NATIVE_INT, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
         if (0 > H5Dwrite(idsid, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ibuf)) SET_ERROR(H5Dwrite);
         if (0 > H5Dclose(idsid)) SET_ERROR(H5Dclose);
+        if (h5tarr1 * h5tarr2 > 1)
+        {
+            if (0 > (idsid = H5Dcreate(fid, "arr_int_compressed", iarrid, sid, H5P_DEFAULT, cpid, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
+            if (0 > H5Dwrite(idsid, iarrid, H5S_ALL, H5S_ALL, H5P_DEFAULT, ibuf)) SET_ERROR(H5Dwrite);
+            if (0 > H5Dclose(idsid)) SET_ERROR(H5Dclose);
+        }
     }
 
     /* clean up from simple tests */
     if (0 > H5Sclose(sid)) SET_ERROR(H5Sclose);
     if (0 > H5Pclose(cpid)) SET_ERROR(H5Pclose);
+    if (0 > H5Tclose(darrid)) SET_ERROR(H5Tclose);
+    if (0 > H5Tclose(iarrid)) SET_ERROR(H5Tclose);
     free(buf);
     if (ibuf) free(ibuf);
 
