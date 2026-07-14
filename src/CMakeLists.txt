@@ -61,10 +61,14 @@ set_target_properties(h5z_zfp_shared PROPERTIES
   BUILD_RPATH "$<TARGET_FILE_DIR:zfp::zfp>"
   INSTALL_RPATH "$ORIGIN"
   INSTALL_RPATH_USE_LINK_PATH ON)
+if (NOT DEFINED H5Z_ZFP_PLUGIN_INSTALL_DIR)
+  set(H5Z_ZFP_PLUGIN_INSTALL_DIR plugin)
+endif ()
+
 install(TARGETS h5z_zfp_shared
-  RUNTIME DESTINATION plugin
-  ARCHIVE DESTINATION plugin
-  LIBRARY DESTINATION plugin)
+  RUNTIME DESTINATION ${H5Z_ZFP_PLUGIN_INSTALL_DIR}
+  ARCHIVE DESTINATION ${H5Z_ZFP_PLUGIN_INSTALL_DIR}
+  LIBRARY DESTINATION ${H5Z_ZFP_PLUGIN_INSTALL_DIR})
 
 #------------------------------------------------------------------------------#
 # Install header and module files.
