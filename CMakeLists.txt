@@ -58,7 +58,7 @@ set(CMAKE_INSTALL_LIBDIR lib)
 set(CMAKE_INSTALL_INCLUDEDIR include)
 set(CMAKE_INSTALL_CMAKEDIR lib/cmake/h5z_zfp)
 set(H5Z_ZFP_PLUGIN_INSTALL_DIR "plugin" CACHE PATH
-          "Install destination for the shared plugin library, relative to CMAKE_INSTALL_PREFIX (or absolute)")
+  "Install destination for the shared plugin library, relative to CMAKE_INSTALL_PREFIX (or absolute)")
 
 #------------------------------------------------------------------------------#
 # Required packages
