@@ -121,6 +121,12 @@ followed by...
 
     cmake --build . --target install
 
+By default, the shared plugin library is installed to ``<path-to-install>/plugin``. This can be overridden with the ``H5Z_ZFP_PLUGIN_INSTALL_DIR`` cmake variable, which accepts a path relative to ``CMAKE_INSTALL_PREFIX`` or an absolute path. This is useful, for example, to install the plugin alongside other HDF5_ plugins in a shared plugin directory...
+
+::
+
+    CC=<C-compiler> FC=<Fortran-compiler> cmake -DCMAKE_INSTALL_PREFIX=<path-to-install> -DH5Z_ZFP_PLUGIN_INSTALL_DIR=lib/plugin <src-dir>
+
 ^^^^^^^^^^^^^
 Running Tests
 ^^^^^^^^^^^^^

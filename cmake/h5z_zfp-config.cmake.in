@@ -24,7 +24,17 @@ find_path(H5Z_ZFP_INCLUDE_DIR NAMES H5Zzfp.h DOC "H5Z_ZFP include directory")
 if(H5Z_ZFP_USE_STATIC_LIBS)
   find_library(H5Z_ZFP_LIBRARY NAMES libh5zzfp.a DOC "H5Z_ZFP library")
 else()
-  find_library(H5Z_ZFP_LIBRARY NAMES libh5zzfp.so HINTS $ENV{H5Z_ZFP_ROOT}/plugin DOC "H5Z_ZFP library")
+  # H5Z_ZFP_PLUGIN_INSTALL_DIR may be relative (join with H5Z_ZFP_ROOT) or
+  # absolute (use as-is), per its definition in the top-level CMakeLists.txt.
+  if(IS_ABSOLUTE "@H5Z_ZFP_PLUGIN_INSTALL_DIR@")
+    set(_h5z_zfp_plugin_hint "@H5Z_ZFP_PLUGIN_INSTALL_DIR@")
+  else()
+    set(_h5z_zfp_plugin_hint "$ENV{H5Z_ZFP_ROOT}/@H5Z_ZFP_PLUGIN_INSTALL_DIR@")
+  endif()
+  find_library(H5Z_ZFP_LIBRARY NAMES libh5zzfp.so
+    HINTS "${_h5z_zfp_plugin_hint}"
+    DOC "H5Z_ZFP library")
+  unset(_h5z_zfp_plugin_hint)
 endif()
 
 include(FindPackageHandleStandardArgs)

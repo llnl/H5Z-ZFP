@@ -50,7 +50,7 @@ jobs:
         
  # Checks-out the repository under $GITHUB_WORKSPACE so the job can access it.
     - name: Get Sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
 ##################################
 # INSTALL ZFP
@@ -94,7 +94,7 @@ jobs:
         echo "FC=gfortran" >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Build ZFP with Make
       run: |
@@ -143,7 +143,7 @@ jobs:
         echo "CXX=g++"  >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Build HDF5 from source
       run: |
@@ -285,7 +285,7 @@ jobs:
         echo "FC=gfortran" >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Install ZFP
       run: |
@@ -331,7 +331,7 @@ jobs:
       shell: bash
 
     - name: Upload to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v7
       with:
         files: coverage.info
         fail_ci_if_error: false
@@ -344,7 +344,7 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: setup MSVC Tools
         uses: ilammy/msvc-dev-cmd@v1
       - name: download HDF5 for Windows
