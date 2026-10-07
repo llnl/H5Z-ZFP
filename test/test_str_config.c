@@ -34,6 +34,28 @@ https://raw.githubusercontent.com/LLNL/H5Z-ZFP/master/LICENSE
  * Helpers
  * ---------------------------------------------------------------------- */
 
+/* Parse a parameter string, run one accessor on it and free it. */
+#define ZCFG_CALL(str, call) \
+    do { \
+        H5Z_config_t *cfg_ = H5Zconfig_parse(str); \
+        htri_t        r_; \
+        if (!cfg_) return -1; \
+        r_ = (call); \
+        H5Zconfig_close(cfg_); \
+        return r_; \
+    } while (0)
+
+static htri_t zcfg_has_key(const char *s, const char *k)
+{ ZCFG_CALL(s, H5Zconfig_has_key(cfg_, k)); }
+static htri_t zcfg_get_int(const char *s, const char *k, int64_t *v)
+{ ZCFG_CALL(s, H5Zconfig_get_int(cfg_, k, v)); }
+static htri_t zcfg_get_double(const char *s, const char *k, double *v)
+{ ZCFG_CALL(s, H5Zconfig_get_double(cfg_, k, v)); }
+static htri_t zcfg_get_bool(const char *s, const char *k, hbool_t *v)
+{ ZCFG_CALL(s, H5Zconfig_get_bool(cfg_, k, v)); }
+static htri_t zcfg_get_str(const char *s, const char *k, char *b, size_t *n)
+{ ZCFG_CALL(s, H5Zconfig_get_str(cfg_, k, b, n)); }
+
 /* Create a DCPL with a single ZFP filter appended via string params. */
 static hid_t make_dcpl_str(const char *params_str)
 {
@@ -354,15 +376,15 @@ static int test_expert_introspection(void)
         H5Pclose(dcpl);
 
         /* Must reconstruct as precision mode, not raw expert params */
-        assert(H5Zconfig_has_key(buf, "prec") > 0 ||
-               H5Zconfig_has_key(buf, "precision") > 0);
-        if (H5Zconfig_has_key(buf, "prec") > 0) {
-            assert(H5Zconfig_get_int(buf, "prec", &ival) > 0 && ival == 16);
+        assert(zcfg_has_key(buf, "prec") > 0 ||
+               zcfg_has_key(buf, "precision") > 0);
+        if (zcfg_has_key(buf, "prec") > 0) {
+            assert(zcfg_get_int(buf, "prec", &ival) > 0 && ival == 16);
         } else {
-            assert(H5Zconfig_get_int(buf, "precision", &ival) > 0 && ival == 16);
+            assert(zcfg_get_int(buf, "precision", &ival) > 0 && ival == 16);
         }
         /* Must NOT contain raw expert keys */
-        assert(H5Zconfig_has_key(buf, "minbits") <= 0);
+        assert(zcfg_has_key(buf, "minbits") <= 0);
     }
 
     /* ---- reversible expressed as expert cd_values ---- *
@@ -386,16 +408,16 @@ static int test_expert_introspection(void)
         /* Must reconstruct as reversible, not raw expert params */
         {
             hbool_t rev = 0;
-            htri_t  has_rev = H5Zconfig_get_bool(buf, "reversible", &rev);
+            htri_t  has_rev = zcfg_get_bool(buf, "reversible", &rev);
             if (has_rev > 0) {
                 assert(rev == 1);
             } else {
                 char ms[32] = ""; size_t msz = sizeof(ms);
-                assert(H5Zconfig_get_str(buf, "mode", ms, &msz) > 0);
+                assert(zcfg_get_str(buf, "mode", ms, &msz) > 0);
                 assert(strcmp(ms, "reversible") == 0);
             }
         }
-        assert(H5Zconfig_has_key(buf, "minbits") <= 0);
+        assert(zcfg_has_key(buf, "minbits") <= 0);
     }
 
     return 0;
@@ -483,11 +505,11 @@ static int test_e2e(void)
 /* Typed check helpers used by CHECK_DS in test_get_config_from_file */
 static int _check_double(const char *s, const char *k, double exp) {
     double v = 0;
-    return H5Zconfig_get_double(s, k, &v) > 0 && v == exp;
+    return zcfg_get_double(s, k, &v) > 0 && v == exp;
 }
 static int _check_int64_t(const char *s, const char *k, int64_t exp) {
     int64_t v = 0;
-    return H5Zconfig_get_int(s, k, &v) > 0 && v == exp;
+    return zcfg_get_int(s, k, &v) > 0 && v == exp;
 }
 
 /* -------------------------------------------------------------------------
@@ -536,7 +558,7 @@ static int test_get_config_from_file(void)
             SET_ERROR(H5Pget_filter_params_by_idx); \
         H5Pclose(dcpl); \
         /* --- verify exact reconstructed value --- */ \
-        assert(H5Zconfig_has_key(buf, key) > 0); \
+        assert(zcfg_has_key(buf, key) > 0); \
         assert(_check_##getter(buf, key, expected_val)); \
         /* --- re-apply string to a new DCPL --- */ \
         if (0 > (dcpl2 = H5Pcreate(H5P_DATASET_CREATE))) SET_ERROR(H5Pcreate); \
@@ -566,10 +588,10 @@ static int test_get_config_from_file(void)
             SET_ERROR(H5Pget_filter_params_by_idx);
         H5Pclose(dcpl);
         int64_t mb = 0, xb = 0, mp = 0, me = 0;
-        assert(H5Zconfig_get_int(buf, "minbits", &mb) > 0 && mb == 0);
-        assert(H5Zconfig_get_int(buf, "maxbits", &xb) > 0 && xb == 4171);
-        assert(H5Zconfig_get_int(buf, "maxprec", &mp) > 0 && mp == 64);
-        assert(H5Zconfig_get_int(buf, "minexp",  &me) > 0 && me == -1074);
+        assert(zcfg_get_int(buf, "minbits", &mb) > 0 && mb == 0);
+        assert(zcfg_get_int(buf, "maxbits", &xb) > 0 && xb == 4171);
+        assert(zcfg_get_int(buf, "maxprec", &mp) > 0 && mp == 64);
+        assert(zcfg_get_int(buf, "minexp",  &me) > 0 && me == -1074);
 
         if (0 > (dcpl2 = H5Pcreate(H5P_DATASET_CREATE))) SET_ERROR(H5Pcreate);
         if (0 > H5Pset_chunk(dcpl2, 1, &chunk)) SET_ERROR(H5Pset_chunk);
@@ -595,11 +617,11 @@ static int test_get_config_from_file(void)
         H5Pclose(dcpl);
         /* reversible reconstructs as "reversible = true" or "mode = \"reversible\"" */
         hbool_t rev = 0;
-        htri_t has_rev = H5Zconfig_get_bool(buf, "reversible", &rev);
+        htri_t has_rev = zcfg_get_bool(buf, "reversible", &rev);
         if (has_rev > 0) { assert(rev == 1); }
         else {
             char ms[32] = ""; size_t msz = sizeof(ms);
-            assert(H5Zconfig_get_str(buf, "mode", ms, &msz) > 0);
+            assert(zcfg_get_str(buf, "mode", ms, &msz) > 0);
             assert(strcmp(ms, "reversible") == 0);
         }
         if (0 > (dcpl2 = H5Pcreate(H5P_DATASET_CREATE))) SET_ERROR(H5Pcreate);
@@ -682,6 +704,7 @@ static int test_errors(void)
     EXPECT_FAIL("mode = \"expert\"");         /* expert declared, all values missing */
     EXPECT_FAIL("minbits = 0, maxprec = 64, minexp = -1074"); /* expert inferred, maxbits missing */
     EXPECT_FAIL("unknown_key = 42");          /* no recognisable mode-determining keys */
+    EXPECT_FAIL("rate = 8.0, ratee = 4.0");   /* misspelled key */
 
     /* ambiguous: multiple mode-determining keys in inferred mode */
     EXPECT_FAIL("rate = 3.5, precision = 16");
@@ -754,7 +777,7 @@ static int test_locale_float(void)
         assert(dcpl >= 0);
         assert(get_params_str(dcpl, buf, sizeof(buf)) >= 0);
         H5Pclose(dcpl);
-        assert(H5Zconfig_get_double(buf, "rate", &v) > 0);
+        assert(zcfg_get_double(buf, "rate", &v) > 0);
         assert(v == 3.5);
     }
 
@@ -765,7 +788,7 @@ static int test_locale_float(void)
         assert(dcpl >= 0);
         assert(get_params_str(dcpl, buf, sizeof(buf)) >= 0);
         H5Pclose(dcpl);
-        assert(H5Zconfig_get_double(buf, "acc", &v) > 0);
+        assert(zcfg_get_double(buf, "acc", &v) > 0);
         assert(v == 1e-3);
     }
 

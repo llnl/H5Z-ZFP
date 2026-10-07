@@ -119,7 +119,7 @@ const H5Z_class2_t H5Z_ZFP[1] = {{
 }};
 
 #ifdef H5Z_ZFP_USE_CLASS3
-static herr_t H5Z_zfp_set_config(const char *params, unsigned *flags,
+static herr_t H5Z_zfp_set_config(const H5Z_config_t *config, unsigned *flags,
     size_t *cd_nelmts, unsigned cd_values[], size_t cd_values_size);
 static herr_t H5Z_zfp_get_config(unsigned flags, size_t cd_nelmts,
     const unsigned cd_values[], char *buf, size_t *buf_size);
@@ -791,7 +791,7 @@ typedef char h5z_zfp_size_check_[(sizeof(double) == 2 * sizeof(unsigned int)) ? 
  * Returns > 0 found, 0 absent, < 0 error (error pushed to HDF5 stack).
  * --------------------------------------------------------------------------- */
 static htri_t
-h5z_zfp_get_double(const char *params, const char *key, double *out)
+h5z_zfp_get_double(const H5Z_config_t *config, const char *key, double *out)
 {
     static char const *_funcname_ = "h5z_zfp_get_double";
     char   str[64];
@@ -799,17 +799,17 @@ h5z_zfp_get_double(const char *params, const char *key, double *out)
     char  *p, *end;
     htri_t ret;
 
-    if ((ret = H5Zconfig_has_key(params, key)) <= 0)
+    if ((ret = H5Zconfig_has_key(config, key)) <= 0)
         return ret;
 
     H5E_BEGIN_TRY {
-        ret = H5Zconfig_get_double(params, key, out);
+        ret = H5Zconfig_get_double(config, key, out);
     } H5E_END_TRY
     if (ret > 0)
         return ret;
 
     H5E_BEGIN_TRY {
-        ret = H5Zconfig_get_str(params, key, str, &str_sz);
+        ret = H5Zconfig_get_str(config, key, str, &str_sz);
     } H5E_END_TRY
     if (ret <= 0 || str_sz >= sizeof(str)) {
         H5Epush(H5E_DEFAULT, __FILE__, _funcname_, __LINE__, H5E_ERR_CLS, H5E_ARGS, H5E_BADVALUE,
@@ -856,7 +856,7 @@ h5z_zfp_get_double(const char *params, const char *key, double *out)
  *   mode = "rate"|"precision"|"accuracy"|"expert"|"reversible"  (explicit)
  * --------------------------------------------------------------------------- */
 static herr_t
-H5Z_zfp_set_config(const char *params, unsigned *flags,
+H5Z_zfp_set_config(const H5Z_config_t *config, unsigned *flags,
     size_t *cd_nelmts, unsigned cd_values[], size_t cd_values_size)
 {
     static char const *_funcname_ = "H5Z_zfp_set_config";
@@ -866,24 +866,37 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
     /* --- Determine mode --------------------------------------------------- */
 
-    /* Empty / NULL config → ZFP default (reversible, consistent with zfp Python binding) */
-    if (!params || !*params) {
+    static const char *const no_keys[]    = {NULL};
+    static const char *const known_keys[] = {"mode", "rate", "precision", "prec", "accuracy", "acc",
+        "minbits", "maxbits", "maxprec", "minexp", "reversible", NULL};
+    herr_t empty;
+
+    if (H5Zconfig_validate_keys(config, known_keys) < 0) {
+        ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "unknown ZFP parameter key");
+        return -1;
+    }
+    H5E_BEGIN_TRY {
+        empty = H5Zconfig_validate_keys(config, no_keys);
+    } H5E_END_TRY
+
+    /* Empty config → ZFP default (reversible, consistent with zfp Python binding) */
+    if (empty >= 0) {
         mode = H5Z_ZFP_MODE_REVERSIBLE;
     } else {
         /* Detect which mode-associated keys are present — checked once here,
          * used for both mode inference and conflict validation below. */
-        int has_rate = H5Zconfig_has_key(params, "rate")      > 0;
-        int has_prec = H5Zconfig_has_key(params, "precision") > 0 ||
-                       H5Zconfig_has_key(params, "prec")      > 0;
-        int has_acc  = H5Zconfig_has_key(params, "accuracy")  > 0 ||
-                       H5Zconfig_has_key(params, "acc")        > 0;
-        int has_exp  = H5Zconfig_has_key(params, "minbits")   > 0;
-        int has_rev_key  = H5Zconfig_has_key(params, "reversible") > 0;
+        int has_rate = H5Zconfig_has_key(config, "rate")      > 0;
+        int has_prec = H5Zconfig_has_key(config, "precision") > 0 ||
+                       H5Zconfig_has_key(config, "prec")      > 0;
+        int has_acc  = H5Zconfig_has_key(config, "accuracy")  > 0 ||
+                       H5Zconfig_has_key(config, "acc")        > 0;
+        int has_exp  = H5Zconfig_has_key(config, "minbits")   > 0;
+        int has_rev_key  = H5Zconfig_has_key(config, "reversible") > 0;
         int has_rev_true = 0;
 
         if (has_rev_key) {
             hbool_t rev_bool = 0;
-            if (H5Zconfig_get_bool(params, "reversible", &rev_bool) < 0) {
+            if (H5Zconfig_get_bool(config, "reversible", &rev_bool) < 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE,
                     "reversible value must be a TOML boolean (true or false)");
                 return -1;
@@ -895,7 +908,7 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
         {
             char   mode_str[32] = "";
             size_t mode_str_sz  = sizeof(mode_str);
-            htri_t has_mode_key = H5Zconfig_get_str(params, "mode", mode_str, &mode_str_sz);
+            htri_t has_mode_key = H5Zconfig_get_str(config, "mode", mode_str, &mode_str_sz);
 
             if (has_mode_key < 0) {
                 ZFP_ERR(H5E_CANTGET, H5E_BADVALUE, "failed to get 'mode' key");
@@ -972,7 +985,7 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_RATE: {
             double rate = 0;
-            if (h5z_zfp_get_double(params, "rate", &rate) <= 0) {
+            if (h5z_zfp_get_double(config, "rate", &rate) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'rate' parameter");
                 return -1;
             }
@@ -994,9 +1007,9 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_PRECISION: {
             int64_t prec = 0;
-            htri_t found = H5Zconfig_get_int(params, "precision", &prec);
+            htri_t found = H5Zconfig_get_int(config, "precision", &prec);
             if (found <= 0)
-                found = H5Zconfig_get_int(params, "prec", &prec);
+                found = H5Zconfig_get_int(config, "prec", &prec);
             if (found <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'precision'/'prec' parameter");
                 return -1;
@@ -1019,9 +1032,9 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_ACCURACY: {
             double acc = 0;
-            htri_t found = h5z_zfp_get_double(params, "accuracy", &acc);
+            htri_t found = h5z_zfp_get_double(config, "accuracy", &acc);
             if (found <= 0)
-                found = h5z_zfp_get_double(params, "acc", &acc);
+                found = h5z_zfp_get_double(config, "acc", &acc);
             if (found <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'accuracy'/'acc' parameter");
                 return -1;
@@ -1044,19 +1057,19 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_EXPERT: {
             int64_t minbits = 0, maxbits = 0, maxprec = 0, minexp_val = 0;
-            if (H5Zconfig_get_int(params, "minbits", &minbits) <= 0) {
+            if (H5Zconfig_get_int(config, "minbits", &minbits) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'minbits' parameter");
                 return -1;
             }
-            if (H5Zconfig_get_int(params, "maxbits", &maxbits) <= 0) {
+            if (H5Zconfig_get_int(config, "maxbits", &maxbits) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'maxbits' parameter");
                 return -1;
             }
-            if (H5Zconfig_get_int(params, "maxprec", &maxprec) <= 0) {
+            if (H5Zconfig_get_int(config, "maxprec", &maxprec) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'maxprec' parameter");
                 return -1;
             }
-            if (H5Zconfig_get_int(params, "minexp", &minexp_val) <= 0) {
+            if (H5Zconfig_get_int(config, "minexp", &minexp_val) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'minexp' parameter");
                 return -1;
             }
