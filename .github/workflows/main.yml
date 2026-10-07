@@ -215,7 +215,7 @@ jobs:
         echo "FC=gfortran" >> $GITHUB_ENV
 
     - name: Get Sources
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Build HDF5 develop from source
       run: |
