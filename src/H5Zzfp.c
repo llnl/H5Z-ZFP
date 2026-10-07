@@ -1,3 +1,5 @@
+#include <locale.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -782,6 +784,65 @@ typedef char h5z_zfp_size_check_[(sizeof(double) == 2 * sizeof(unsigned int)) ? 
             H5E_ERR_CLS, (maj), (min), (msg))
 
 /* ---------------------------------------------------------------------------
+ * h5z_zfp_get_double: read a floating-point parameter that may be given
+ * either as a TOML float (rate = 3.5) or as a quoted C99 hex-float string
+ * (rate = "0x1.cp+1").  TOML has no hex-float syntax, so the hex form must be
+ * quoted; it gives the exact bit pattern of the double.
+ * Returns > 0 found, 0 absent, < 0 error (error pushed to HDF5 stack).
+ * --------------------------------------------------------------------------- */
+static htri_t
+h5z_zfp_get_double(const char *params, const char *key, double *out)
+{
+    static char const *_funcname_ = "h5z_zfp_get_double";
+    char   str[64];
+    size_t str_sz = sizeof(str);
+    char  *p, *end;
+    htri_t ret;
+
+    if ((ret = H5Zconfig_has_key(params, key)) <= 0)
+        return ret;
+
+    H5E_BEGIN_TRY {
+        ret = H5Zconfig_get_double(params, key, out);
+    } H5E_END_TRY
+    if (ret > 0)
+        return ret;
+
+    H5E_BEGIN_TRY {
+        ret = H5Zconfig_get_str(params, key, str, &str_sz);
+    } H5E_END_TRY
+    if (ret <= 0 || str_sz >= sizeof(str)) {
+        H5Epush(H5E_DEFAULT, __FILE__, _funcname_, __LINE__, H5E_ERR_CLS, H5E_ARGS, H5E_BADVALUE,
+            "'%s' must be a float or a quoted hex-float string", key);
+        return -1;
+    }
+
+    /* Require a hex-float: [+-]0x... */
+    p = str + ((str[0] == '+' || str[0] == '-') ? 1 : 0);
+    if (!(p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))) {
+        H5Epush(H5E_DEFAULT, __FILE__, _funcname_, __LINE__, H5E_ERR_CLS, H5E_ARGS, H5E_BADVALUE,
+            "string value of '%s' must be a C99 hex-float literal (e.g. \"0x1.8p+1\")", key);
+        return -1;
+    }
+
+    /* strtod() reads the locale's decimal point; hex-floats always use '.' */
+    {
+        const char *dp = localeconv()->decimal_point;
+        if (dp && dp[0] && dp[0] != '.' && dp[1] == '\0' && NULL != (p = strchr(str, '.')))
+            *p = dp[0];
+    }
+
+    *out = strtod(str, &end);
+    if (end == str || *end != '\0' || !isfinite(*out)) {
+        H5Epush(H5E_DEFAULT, __FILE__, _funcname_, __LINE__, H5E_ERR_CLS, H5E_ARGS, H5E_BADVALUE,
+            "invalid hex-float value for '%s'", key);
+        return -1;
+    }
+
+    return 1;
+}
+
+/* ---------------------------------------------------------------------------
  * set_config: parse a TOML-subset key=value parameter string and populate
  * the in-memory cd_values array (the "mem format" used before set_local runs).
  *
@@ -789,6 +850,7 @@ typedef char h5z_zfp_size_check_[(sizeof(double) == 2 * sizeof(unsigned int)) ? 
  *   rate = <double>
  *   precision = <int>  (or prec = <int>)
  *   accuracy = <double>  (or acc = <double>)
+ * A <double> may also be a quoted hex-float string, e.g. rate = "0x1.8p+1".
  *   minbits = <int>, maxbits = <int>, maxprec = <int>, minexp = <int>
  *   reversible = true
  *   mode = "rate"|"precision"|"accuracy"|"expert"|"reversible"  (explicit)
@@ -910,7 +972,7 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_RATE: {
             double rate = 0;
-            if (H5Zconfig_get_double(params, "rate", &rate) <= 0) {
+            if (h5z_zfp_get_double(params, "rate", &rate) <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'rate' parameter");
                 return -1;
             }
@@ -957,9 +1019,9 @@ H5Z_zfp_set_config(const char *params, unsigned *flags,
 
         case H5Z_ZFP_MODE_ACCURACY: {
             double acc = 0;
-            htri_t found = H5Zconfig_get_double(params, "accuracy", &acc);
+            htri_t found = h5z_zfp_get_double(params, "accuracy", &acc);
             if (found <= 0)
-                found = H5Zconfig_get_double(params, "acc", &acc);
+                found = h5z_zfp_get_double(params, "acc", &acc);
             if (found <= 0) {
                 ZFP_ERR(H5E_ARGS, H5E_BADVALUE, "missing or invalid 'accuracy'/'acc' parameter");
                 return -1;

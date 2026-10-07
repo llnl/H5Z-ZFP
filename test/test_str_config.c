@@ -90,6 +90,30 @@ static int test_set_config(void)
         H5Pclose(dcpl);
     }
 
+    /* ---- rate and accuracy as quoted hex-floats ---- */
+    {
+        const char *hex_rate = "rate = \"0x1p+3\"";
+        char        buf[256];
+        hid_t       dcpl = make_dcpl_str(hex_rate);
+        if (dcpl < 0) SET_ERROR(H5Pappend_filter);
+        ng = get_cd(dcpl, got);
+        nr = 8; H5Pset_zfp_rate_cdata(8.0, nr, ref);
+        assert(ng == nr);
+        assert(got[0] == ref[0] && got[2] == ref[2] && got[3] == ref[3]);
+        /* The stored string is the user's, unchanged */
+        assert(get_params_str(dcpl, buf, sizeof(buf)) >= 0);
+        assert(strcmp(buf, hex_rate) == 0);
+        H5Pclose(dcpl);
+
+        dcpl = make_dcpl_str("acc = \"0x1.0624dd2f1a9fcp-10\"");
+        if (dcpl < 0) SET_ERROR(H5Pappend_filter);
+        ng = get_cd(dcpl, got);
+        nr = 8; H5Pset_zfp_accuracy_cdata(0x1.0624dd2f1a9fcp-10, nr, ref);
+        assert(ng == nr);
+        assert(got[0] == ref[0] && got[2] == ref[2] && got[3] == ref[3]);
+        H5Pclose(dcpl);
+    }
+
     /* ---- precision ---- */
     {
         unsigned prec = 16;
@@ -677,6 +701,12 @@ static int test_errors(void)
     EXPECT_FAIL("accuracy = -0.001");         /* negative accuracy */
     EXPECT_FAIL("minbits = 100, maxbits = 50, maxprec = 64, minexp = -1074"); /* minbits > maxbits */
     EXPECT_FAIL("minbits = 0, maxbits = 64, maxprec = 32, minexp = -1076");   /* below ZFP_MIN_EXP-1 */
+
+    /* hex-float values must be quoted, hex, and finite */
+    EXPECT_FAIL("rate = 0x1p+3");             /* unquoted hex-float is not TOML */
+    EXPECT_FAIL("rate = \"8.0\"");            /* string that is not a hex-float */
+    EXPECT_FAIL("rate = \"0x1p+3x\"");        /* trailing garbage */
+    EXPECT_FAIL("acc = \"0x1p+99999\"");      /* overflows to infinity */
 
     /* reversible = false with no other mode key → no mode selected */
     EXPECT_FAIL("reversible = false");
