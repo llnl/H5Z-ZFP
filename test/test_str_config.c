@@ -514,10 +514,12 @@ static int _check_int64_t(const char *s, const char *k, int64_t exp) {
 
 /* -------------------------------------------------------------------------
  * test_get_config_from_file: reopen the file written by test_e2e.
- * For each dataset, call H5Pget_filter_params_by_idx on the stored
- * (ZFP-header) cd_values, verify the exact reconstructed numeric values,
- * then re-feed the string into H5Pappend_filter and write a second dataset
- * that must read back identically to the original.
+ * For each dataset, H5Pget_filter_params_by_idx returns the parameter
+ * string stored in the file (kept even though set_local rewrote cd_values
+ * into the ZFP header); verify its values, then re-feed the string into
+ * H5Pappend_filter and write a second dataset that must read back
+ * identically to the original.  A dataset created from raw cd_values has
+ * no stored string, so its parameters are rebuilt from the ZFP header.
  * ---------------------------------------------------------------------- */
 
 static int test_get_config_from_file(void)
@@ -574,7 +576,7 @@ static int test_get_config_from_file(void)
 
     CHECK_DS("rate8",  "rate",    double,   8.0,    0.0);
     CHECK_DS("acc001", "acc",     double,   0.001,  0.0);
-    CHECK_DS("prec16", "prec",    int64_t,  16,     0);
+    CHECK_DS("prec16", "precision", int64_t, 16,    0);
 
     /* Expert: check all four keys */
     {
@@ -636,6 +638,29 @@ static int test_get_config_from_file(void)
     }
 
     if (0 > H5Fclose(fid))  SET_ERROR(H5Fclose);
+    /* Without a stored string, accuracy is rebuilt from zfp's header, which
+     * keeps the tolerance as a power of two: 0.001 reads back as 2^-10 */
+    {
+        unsigned cd[8];
+        size_t   ncd = 8;
+
+        H5Pset_zfp_accuracy_cdata(0.001, ncd, cd);
+        if (0 > (dcpl = H5Pcreate(H5P_DATASET_CREATE))) SET_ERROR(H5Pcreate);
+        if (0 > H5Pset_chunk(dcpl, 1, &chunk)) SET_ERROR(H5Pset_chunk);
+        if (0 > H5Pset_filter(dcpl, H5Z_FILTER_ZFP, H5Z_FLAG_MANDATORY, ncd, cd))
+            SET_ERROR(H5Pset_filter);
+        if (0 > (dsid = H5Dcreate(fid2, "acc001_cd", H5T_NATIVE_DOUBLE, sid,
+                                  H5P_DEFAULT, dcpl, H5P_DEFAULT))) SET_ERROR(H5Dcreate);
+        H5Pclose(dcpl);
+        if (0 > (dcpl = H5Dget_create_plist(dsid))) SET_ERROR(H5Dget_create_plist);
+        len = sizeof(buf);
+        if (0 > H5Pget_filter_params_by_idx(dcpl, 0, buf, len, &len))
+            SET_ERROR(H5Pget_filter_params_by_idx);
+        assert(_check_double(buf, "acc", 0x1p-10));
+        H5Pclose(dcpl);
+        H5Dclose(dsid);
+    }
+
     if (0 > H5Fclose(fid2)) SET_ERROR(H5Fclose);
 
     /* Now reopen fid2 and compare every dataset against r1 (from fid) */
