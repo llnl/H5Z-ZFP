@@ -572,8 +572,6 @@ H5Z_filter_zfp(unsigned int flags, size_t cd_nelmts,
     zfp_stream *zstr = 0;
     zfp_field *zfld = 0;
 
-    (void)nbytes; /* currently not used */
-
     /* Pass &cd_values[1] here to strip off first entry holding version info */
     if (0 == get_zfp_info_from_cd_values(cd_nelmts-1, &cd_values[1], &zfp_mode, &zfp_meta, &swap))
         H5Z_ZFP_PUSH_AND_GOTO(H5E_PLINE, H5E_CANTGET, 0, "can't get ZFP mode/meta");
@@ -610,8 +608,9 @@ H5Z_filter_zfp(unsigned int flags, size_t cd_nelmts,
 
         Z zfp_field_set_pointer(zfld, newbuf);
 
-        /* Setup the ZFP stream object */
-        if (0 == (bstr = B stream_open(*buf, *buf_size)))
+        /* Setup the ZFP stream object.
+           Inform ZFP of only the *valid* bytes in *buf (e.g nbytes), not *buf's capacity. */
+        if (0 == (bstr = B stream_open(*buf, nbytes)))
             H5Z_ZFP_PUSH_AND_GOTO(H5E_RESOURCE, H5E_NOSPACE, 0, "bitstream open failed");
 
         if (0 == (zstr = Z zfp_stream_open(bstr)))
